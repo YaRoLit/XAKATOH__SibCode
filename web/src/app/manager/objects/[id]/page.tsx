@@ -126,7 +126,7 @@ export default function ObjectCardPage() {
         {(obj.reports || []).length === 0 && !(obj.analysis_jobs || []).length ? (
           <p className="text-sm text-muted">
             {(obj.recent_surveys || []).some((s) => !s.s3_key)
-              ? "Оператор загрузил фото, но батч ещё не согласован — в хранилище и к агенту они не попали."
+              ? "Оператор загрузил фото, но ещё не отправил их в работу — в хранилище и к агенту они не попали."
               : "Агент ещё не записал отчёт."}
           </p>
         ) : null}

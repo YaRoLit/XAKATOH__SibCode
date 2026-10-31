@@ -272,7 +272,8 @@ async def object_photo_state(session: AsyncSession, object_id: str) -> dict:
         await session.execute(
             text(
                 """
-                SELECT id, survey_id, status, created_at, completed_at
+                SELECT id, primary_survey_id, survey_ids, batch_id, capture_date,
+                       status, created_at, completed_at
                 FROM processing_queue
                 WHERE object_id = :object_id
                 ORDER BY created_at DESC
@@ -293,5 +294,8 @@ async def object_photo_state(session: AsyncSession, object_id: str) -> dict:
             }
             for s in surveys
         ],
-        "analysis_jobs": [dict(row) for row in jobs],
+        "analysis_jobs": [
+            {**dict(row), "survey_id": dict(row).get("primary_survey_id")}
+            for row in jobs
+        ],
     }

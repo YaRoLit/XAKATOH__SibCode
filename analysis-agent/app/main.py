@@ -30,7 +30,7 @@ def main() -> None:
         finally:
             session.close()
         if job:
-            log.info("job claimed", extra={"extra_data": {"queue_id": job["id"], "survey_id": job["survey_id"]}})
+            log.info("job claimed", extra={"extra_data": {"queue_id": job["id"], "batch_id": job.get("batch_id"), "object_id": job.get("object_id")}})
             process_job(job)
             continue
         for _ in range(interval):

@@ -42,10 +42,23 @@ def scale_text(cfg: dict | None = None) -> str:
     return str(cfg.get("calibration_scale") or "").strip()
 
 
-def render_prompt(kind: str, cfg: dict | None = None) -> tuple[str, str]:
+def multi_photo_block(photo_count: int, cfg: dict | None = None) -> str:
+    if photo_count <= 1:
+        return ""
+    cfg = cfg or yaml_config
+    block = ((cfg.get("multi_photo") or {}).get("prompt_block") or "").strip()
+    return block.replace("{{N}}", str(photo_count))
+
+
+def render_prompt(kind: str, cfg: dict | None = None, photo_count: int = 1) -> tuple[str, str]:
     cfg = cfg or yaml_config
     block = cfg["prompts"][kind]
-    text = block["text"].replace("{{STAGES}}", stages_text(cfg)).replace("{{SCALE}}", scale_text(cfg))
+    text = (
+        block["text"]
+        .replace("{{STAGES}}", stages_text(cfg))
+        .replace("{{SCALE}}", scale_text(cfg))
+        .replace("{{MULTI_PHOTO}}", multi_photo_block(photo_count, cfg))
+    )
     return block["version"], text
 
 

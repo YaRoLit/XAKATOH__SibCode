@@ -80,7 +80,11 @@ class AnalysisReport(Base):
     __tablename__ = "analysis_reports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    survey_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    survey_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    primary_survey_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    survey_ids: Mapped[list | None] = mapped_column(JSONB)
+    batch_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    capture_date: Mapped[date | None] = mapped_column(Date)
     object_id: Mapped[str] = mapped_column(ForeignKey("objects.id"), index=True)
     captured_at: Mapped[datetime | None] = mapped_column(DateTime)
     report_mode: Mapped[str | None] = mapped_column(String(32))

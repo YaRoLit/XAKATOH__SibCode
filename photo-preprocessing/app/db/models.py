@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -53,10 +54,15 @@ class Survey(Base):
 
 class ProcessingQueue(Base):
     __tablename__ = "processing_queue"
+    __table_args__ = (UniqueConstraint("batch_id", "object_id", name="uq_queue_batch_object"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    survey_id: Mapped[int] = mapped_column(ForeignKey("surveys.id"), unique=True)
+    survey_id: Mapped[int | None] = mapped_column(Integer)
+    survey_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    primary_survey_id: Mapped[int | None] = mapped_column(Integer)
+    batch_id: Mapped[str | None] = mapped_column(String(64), index=True)
     object_id: Mapped[str] = mapped_column(ForeignKey("objects.id"), index=True)
+    capture_date: Mapped[date | None] = mapped_column(Date)
     priority: Mapped[str] = mapped_column(String(16), default="normal")
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

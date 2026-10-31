@@ -7,8 +7,36 @@ from PIL import Image
 from app.settings import yaml_config
 
 
+def _photo_by_index(photos: list[dict], photo_index: int) -> dict | None:
+    for photo in photos or []:
+        if int(photo.get("index") or 0) == int(photo_index):
+            return photo
+    return None
+
+
+def encode_image(image_path: str, max_side: int, quality: int) -> str:
+    with Image.open(image_path) as img:
+        img = img.convert("RGB")
+        img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=quality, optimize=True)
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+
+def select_photo_func(photos: list[dict], photo_index: int, reason: str) -> str:
+    photo = _photo_by_index(photos, photo_index)
+    if photo is None:
+        return f"Ошибка: фото {photo_index} нет в рабочей группе."
+    path = photo.get("path")
+    if not path or not Path(path).exists():
+        return f"Ошибка: файл фото {photo_index} недоступен."
+    image_cfg = yaml_config.get("image") or {}
+    max_side = int(image_cfg.get("overview_max_side", 1024))
+    return encode_image(path, max_side, 90)
+
+
 def crop_image_func(image_path: str, reason: str, xmin: int, ymin: int, xmax: int, ymax: int) -> str:
-    """Путь к изображению передаётся первым аргументом из состояния графа."""
+    """Путь к изображению передаётся из состояния графа по photo_index."""
     image_cfg = yaml_config.get("image") or {}
     agent_cfg = yaml_config.get("agent") or {}
     max_area = int(agent_cfg.get("crop_max_area", 300000))
@@ -49,26 +77,68 @@ def crop_image_func(image_path: str, reason: str, xmin: int, ymin: int, xmax: in
         return f"Ошибка: {exc}"
 
 
-CROP_TOOL_SCHEMA = {
+def crop_photo_func(photos: list[dict], photo_index: int, reason: str, xmin: int, ymin: int, xmax: int, ymax: int) -> str:
+    photo = _photo_by_index(photos, photo_index)
+    if photo is None:
+        return f"Ошибка: фото {photo_index} нет в рабочей группе."
+    return crop_image_func(photo.get("path") or "", reason, xmin, ymin, xmax, ymax)
+
+
+def thumbnail_side(photo_count: int) -> int:
+    multi = yaml_config.get("multi_photo") or {}
+    budget = int(multi.get("thumbnail_pixel_budget", 2_000_000))
+    n = max(int(photo_count or 1), 1)
+    return int(max(256, min(1024, (budget / n) ** 0.5)))
+
+
+SELECT_TOOL_SCHEMA = {
     "type": "function",
     "function": {
-        "name": "crop_image_tool",
+        "name": "select_photo_tool",
         "description": (
-            "Вырезает фрагмент изображения для детального рассмотрения. "
-            "Координаты нормализованные 0-1000. Максимальная площадь кропа 300000."
+            "Возвращает выбранное фото целиком (до 1024 по длинной стороне) для детального осмотра. "
+            "photo_index — номер фото в группе (1 = самое раннее)."
         ),
         "parameters": {
             "type": "object",
             "properties": {
+                "photo_index": {"type": "integer", "description": "Номер фото, 1 = самое раннее"},
+                "reason": {"type": "string", "description": "Почему нужно это фото целиком"},
+            },
+            "required": ["photo_index", "reason"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+}
+
+CROP_TOOL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "crop_photo_tool",
+        "description": (
+            "Вырезает фрагмент выбранного фото. Координаты нормализованные 0-1000. "
+            "Максимальная площадь кропа 300000. photo_index — номер фото в группе."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "photo_index": {"type": "integer", "description": "Номер фото, при одном снимке всегда 1"},
                 "reason": {"type": "string", "description": "Что рассматриваем и почему"},
                 "xmin": {"type": "integer"},
                 "ymin": {"type": "integer"},
                 "xmax": {"type": "integer"},
                 "ymax": {"type": "integer"},
             },
-            "required": ["reason", "xmin", "ymin", "xmax", "ymax"],
+            "required": ["photo_index", "reason", "xmin", "ymin", "xmax", "ymax"],
             "additionalProperties": False,
         },
         "strict": True,
     },
+}
+
+# Старое имя оставлено как алиас на случай старого промпта в кэше.
+CROP_IMAGE_TOOL_SCHEMA = {
+    **CROP_TOOL_SCHEMA,
+    "function": {**CROP_TOOL_SCHEMA["function"], "name": "crop_image_tool"},
 }

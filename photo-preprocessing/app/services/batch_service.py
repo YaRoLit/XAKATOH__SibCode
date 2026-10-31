@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.logging import get_logger
 from app.db import repositories as repo
-from app.services import metadata_extractor, quality_checker, storage
+from app.services import metadata_extractor, quality_checker, queue_groups, storage
 from app.workers import validation_worker
 import asyncio
 
@@ -38,7 +38,10 @@ async def upload_files(session: AsyncSession, batch_id: str, files: list[UploadF
         if settings.idempotency.enabled and not errors:
             blocking = await repo.find_hash_blocking(session, file_hash)
         if blocking:
-            errors.append(f"Файл уже загружен ранее (батч {blocking.batch_id}, survey {blocking.id})")
+            errors.append(
+                f"Этот файл уже загружен (тот же хэш, съёмка {blocking.id}). "
+                "Другие ракурсы того же объекта принимаются."
+            )
 
         if errors:
             await repo.add_survey(session, batch_id=batch_id, filename=file.filename,
@@ -67,7 +70,7 @@ async def start_processing(session: AsyncSession, batch_id: str) -> None:
 async def confirm(session: AsyncSession, batch_id: str) -> dict:
     batch = await repo.get_batch(session, batch_id)
     if batch is None or batch.status not in {"completed", "partially_confirmed"}:
-        return {"status": "error", "message": f"Батч не готов к подтверждению (status={batch.status if batch else None})"}
+        return {"status": "error", "message": f"Загрузка ещё не готова к отправке (status={batch.status if batch else None})"}
     
     surveys = await repo.list_surveys(session, batch_id)
     failed = []
@@ -80,7 +83,6 @@ async def confirm(session: AsyncSession, batch_id: str) -> dict:
             try:
                 storage.upload(raw_key, Path(s.temp_path).read_bytes())
                 await repo.update_survey(session, s.id, s3_key=raw_key)
-                await repo.insert_queue_row(session, s.id, s.object_id)
                 uploaded += 1
                 log.debug("confirm: survey=%s -> S3 (original only) %s", s.id, raw_key)
             except Exception as e:
@@ -98,24 +100,25 @@ async def confirm(session: AsyncSession, batch_id: str) -> dict:
         return {"status": "error", "message": "Часть файлов не загружена...", "uploaded": uploaded, "failed": failed}
 
     await _reject_unmatched(session, surveys)
+    await _enqueue_ready_groups(session, batch_id)
     await _cleanup_temp_if_done(session, batch_id)
-    await repo.set_batch_status(session, batch_id, "confirmed")
+    await repo.set_batch_status(session, batch_id, "ready")
     return {"status": "ok", "uploaded_to_storage": uploaded}
 
 
 async def confirm_object(session: AsyncSession, batch_id: str, object_id: str) -> dict:
-    """Подтверждает validated-фото одного объекта. Остальные объекты батча не трогает."""
+    """Подтверждает validated-фото одного объекта. Остальные объекты загрузки не трогает."""
     batch = await repo.get_batch(session, batch_id)
     if batch is None or batch.status not in {"completed", "partially_confirmed"}:
         return {
             "status": "error",
-            "message": f"Батч не готов к подтверждению (status={batch.status if batch else None})",
+            "message": f"Загрузка ещё не готова к отправке (status={batch.status if batch else None})",
         }
 
     surveys = await repo.list_surveys(session, batch_id)
     target = [s for s in surveys if s.object_id == object_id]
     if not target:
-        return {"status": "error", "message": f"В батче нет фото объекта {object_id}"}
+        return {"status": "error", "message": f"В этой загрузке нет фото объекта {object_id}"}
 
     failed = []
     uploaded = 0
@@ -126,7 +129,6 @@ async def confirm_object(session: AsyncSession, batch_id: str, object_id: str) -
         try:
             storage.upload(raw_key, Path(s.temp_path).read_bytes())
             await repo.update_survey(session, s.id, s3_key=raw_key)
-            await repo.insert_queue_row(session, s.id, s.object_id)
             uploaded += 1
             log.debug("confirm-object: survey=%s obj=%s -> %s", s.id, object_id, raw_key)
         except Exception as e:
@@ -136,10 +138,9 @@ async def confirm_object(session: AsyncSession, batch_id: str, object_id: str) -
     if failed:
         return {"status": "error", "message": "Часть файлов объекта не загружена", "uploaded": uploaded, "failed": failed}
 
-    remaining = [
-        s for s in await repo.list_surveys(session, batch_id)
-        if s.status == "validated" and not s.s3_key
-    ]
+    fresh = await repo.list_surveys(session, batch_id)
+    await queue_groups.enqueue_object_group(session, batch_id, object_id, fresh)
+    remaining = [s for s in fresh if s.status == "validated" and not s.s3_key]
     if remaining:
         await repo.set_batch_status(session, batch_id, "partially_confirmed")
         return {
@@ -149,15 +150,22 @@ async def confirm_object(session: AsyncSession, batch_id: str, object_id: str) -
             "batch_status": "partially_confirmed",
         }
 
-    await _reject_unmatched(session, await repo.list_surveys(session, batch_id))
+    await _reject_unmatched(session, fresh)
     await _cleanup_temp_if_done(session, batch_id)
-    await repo.set_batch_status(session, batch_id, "confirmed")
+    await repo.set_batch_status(session, batch_id, "ready")
     return {
         "status": "ok",
         "uploaded_to_storage": uploaded,
         "object_id": object_id,
-        "batch_status": "confirmed",
+        "batch_status": "ready",
     }
+
+
+async def _enqueue_ready_groups(session: AsyncSession, batch_id: str) -> None:
+    surveys = await repo.list_surveys(session, batch_id)
+    object_ids = {s.object_id for s in surveys if s.status == "validated" and s.s3_key and s.object_id}
+    for object_id in object_ids:
+        await queue_groups.enqueue_object_group(session, batch_id, object_id, surveys)
 
 
 async def _reject_unmatched(session: AsyncSession, surveys) -> None:

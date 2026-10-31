@@ -125,7 +125,11 @@ export function AiReportView({ report }: { report: Report }) {
                   <p className="min-w-0 break-words font-medium">{String(item.feature || "Признак")}</p>
                   <Badge className="bg-paper text-muted">{String(item.status || "—")}</Badge>
                 </div>
-                {item.location ? <p className="mt-1 break-words text-muted">{String(item.location)}</p> : null}
+                <p className="mt-1 break-words text-muted">
+                  {item.photo_index != null ? `Фото ${String(item.photo_index)}` : ""}
+                  {item.photo_index != null && item.location ? " · " : ""}
+                  {item.location ? String(item.location) : ""}
+                </p>
                 {item.note ? <p className="mt-1 break-words text-xs text-muted">{String(item.note)}</p> : null}
               </div>
             ))}

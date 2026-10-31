@@ -64,11 +64,26 @@ class MaterialsStatus(str, Enum):
     not_assessable = "not_assessable"
 
 
+class PhotoRelevance(str, Enum):
+    match = "match"
+    mismatch = "mismatch"
+    uncertain = "uncertain"
+    outdated = "outdated"
+
+
 class MarkerCheck(BaseModel):
     feature: str
     status: MarkerStatus
     location: str
     confidence: float = Field(ge=0.0, le=1.0)
+    note: str | None = None
+    photo_index: int = 1
+
+
+class PhotoAssessment(BaseModel):
+    photo_index: int
+    relevance: PhotoRelevance
+    image_quality: ImageQuality | None = None
     note: str | None = None
 
 
@@ -98,6 +113,8 @@ class ReportCommon(BaseModel):
     markup_used: bool | None = None
     image_quality: ImageQuality
     overall_confidence: float = Field(ge=0.0, le=1.0)
+    photo_assessments: list[PhotoAssessment] = Field(default_factory=list)
+    selected_photo_indices: list[int] = Field(default_factory=list)
 
 
 class ReportWithPlan(ReportCommon):

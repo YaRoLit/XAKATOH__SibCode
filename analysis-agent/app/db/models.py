@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -29,9 +29,14 @@ class ConstructionPlan(AgentBase):
 
 class AnalysisReport(AgentBase):
     __tablename__ = "analysis_reports"
+    __table_args__ = (UniqueConstraint("batch_id", "object_id", name="uq_analysis_reports_batch_object"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    survey_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    survey_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    primary_survey_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    survey_ids: Mapped[list | None] = mapped_column(JSONB)
+    batch_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    capture_date: Mapped[date | None] = mapped_column(Date)
     object_id: Mapped[str] = mapped_column(String(64), index=True)
     captured_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
     report_mode: Mapped[str] = mapped_column(String(32))

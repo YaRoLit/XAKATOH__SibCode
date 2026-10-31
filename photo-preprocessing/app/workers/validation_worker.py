@@ -10,7 +10,7 @@ from app.config import settings
 from app.core.logging import get_logger
 from app.db import repositories as repo
 from app.db.session import SessionLocal
-from app.services import coverage_calculator, object_matcher
+from app.services import coverage_calculator, object_matcher, period_gate
 
 log = get_logger(__name__)
 
@@ -39,6 +39,17 @@ async def _process_single_survey(session, survey, objects):
             validation_errors=survey.validation_errors + ["Объект не найден по координатам съемки"]
         )
         log.debug("worker: survey=%s needs_manual_match", survey.id)
+        return
+
+    photo_day = period_gate.exif_date(survey)
+    last_period = await period_gate.last_stored_period(session, obj.id)
+    stale = period_gate.stale_reason(photo_day, last_period)
+    if stale:
+        await repo.update_survey(
+            session, survey.id, status="rejected", object_id=obj.id,
+            validation_errors=survey.validation_errors + [stale],
+        )
+        log.debug("worker: survey=%s rejected stale day=%s last=%s", survey.id, photo_day, last_period)
         return
 
     img = cv2.imread(str(Path(survey.temp_path)), cv2.IMREAD_COLOR)
@@ -123,12 +134,12 @@ async def run_validation(batch_id: str) -> None:
                     ]
                 )
 
-        # Дедупликация (тоже в try, чтобы не сломать завершение батча)
         try:
-            if settings.dedup.enabled:
-                await _dedup_pass(session, batch_id)
+            rejected_old = await period_gate.reject_older_days_in_batch(session, batch_id)
+            if rejected_old:
+                log.debug("worker: batch=%s rejected %s photos from older days", batch_id, rejected_old)
         except Exception as e:
-            log.error("worker: dedup pass failed: %s", e, exc_info=True)
+            log.error("worker: period gate failed: %s", e, exc_info=True)
 
         await repo.set_batch_status(session, batch_id, "completed")
         try:
@@ -141,30 +152,3 @@ async def run_validation(batch_id: str) -> None:
         except Exception as e:
             log.error("worker: photo notify failed: %s", e, exc_info=True)
     log.debug("worker: batch=%s completed", batch_id)
-
-
-async def _dedup_pass(session, batch_id: str) -> None:
-    surveys = await repo.list_surveys(session, batch_id)
-    groups: dict[str, list] = defaultdict(list)
-    for s in surveys:
-        if s.status == "validated" and s.object_id:
-            groups[s.object_id].append(s)
-
-    for object_id, group in groups.items():
-        if len(group) < 2:
-            continue
-        group.sort(
-            key=lambda s: (s.metadata_ or {}).get("datetime_original") or s.created_at.isoformat(),
-            reverse=True
-        )
-        winner, *rest = group
-        for loser in rest:
-            await repo.update_survey(
-                session, loser.id, status="duplicate", duplicate_of=winner.id,
-                validation_errors=loser.validation_errors + [
-                    f"Дубликат: основным выбран снимок {winner.filename} "
-                    "(более поздний по времени съемки)"
-                ]
-            )
-        log.debug("worker: dedup object=%s winner=%s duplicates=%s",
-                  object_id, winner.id, [r.id for r in rest])

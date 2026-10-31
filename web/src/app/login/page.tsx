@@ -38,7 +38,7 @@ export default function LoginPage() {
           <p className="text-xs uppercase tracking-[0.22em] text-muted">Банк · залог строящегося дома</p>
           <h1 className="mt-3 font-serif text-5xl leading-tight">СибКонтур следит за стройкой, пока кредит в работе.</h1>
           <p className="mt-4 max-w-md text-muted">
-            Менеджер видит контрольные точки и отчёты агента. Оператор загружает пачку снимков — система сама
+            Менеджер видит контрольные точки и отчёты агента. Оператор загружает снимки — система сама
             сопоставляет их с участками.
           </p>
         </div>
