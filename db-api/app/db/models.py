@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -148,6 +148,57 @@ class ProblemAction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     alert: Mapped[ProblemAlert] = relationship(back_populates="actions")
+
+
+class PriceSearchTask(Base):
+    __tablename__ = "price_search_tasks"
+    __table_args__ = (
+        Index("ix_price_tasks_status_created", "status", "created_at"),
+        Index("ix_price_tasks_object_created", "object_id", "created_at"),
+        Index(
+            "uq_price_tasks_object_active",
+            "object_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'processing')"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    object_id: Mapped[str] = mapped_column(ForeignKey("objects.id"), index=True)
+    analysis_report_id: Mapped[int] = mapped_column(ForeignKey("analysis_reports.id"), index=True)
+    address_snapshot: Mapped[str] = mapped_column(Text)
+    cadastral_number_snapshot: Mapped[str | None] = mapped_column(String(64))
+    spec_json: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    picked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    requested_by: Mapped[str | None] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(32), default="manager_dashboard")
+
+
+class PriceReport(Base):
+    __tablename__ = "price_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("price_search_tasks.id"), unique=True)
+    object_id: Mapped[str] = mapped_column(ForeignKey("objects.id"), index=True)
+    value_min: Mapped[int] = mapped_column(BigInteger)
+    value_point: Mapped[int] = mapped_column(BigInteger)
+    value_max: Mapped[int] = mapped_column(BigInteger)
+    currency: Mapped[str] = mapped_column(String(8), default="RUB")
+    justification: Mapped[str] = mapped_column(Text)
+    comparables_json: Mapped[list] = mapped_column(JSONB)
+    confidence: Mapped[float | None] = mapped_column(Float)
+    data_source: Mapped[str] = mapped_column(String(32), default="mock_llm_v1")
+    is_mock: Mapped[bool] = mapped_column(Boolean, default=True)
+    prompt_version: Mapped[str] = mapped_column(String(64))
+    llm_model: Mapped[str | None] = mapped_column(String(128))
+    tokens_in: Mapped[int | None] = mapped_column(Integer)
+    tokens_out: Mapped[int | None] = mapped_column(Integer)
+    processing_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class Survey(Base):

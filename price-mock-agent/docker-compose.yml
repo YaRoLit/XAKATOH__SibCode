@@ -1,0 +1,26 @@
+name: dronemon-price-agent
+
+# Мок-оценка стоимости. Сеть и Postgres — из Infra.
+# docker compose up -d --build
+
+services:
+  price-mock-agent:
+    build: .
+    container_name: dronemon-price-mock-agent
+    env_file: .env
+    volumes:
+      - ./config:/app/config:ro
+    networks:
+      dronemon_net:
+        aliases: [price-mock-agent]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  dronemon_net:
+    name: dronemon_net
+    external: true

@@ -64,6 +64,50 @@ export type Checkpoint = {
   checkpoint_titles?: string[];
 };
 
+export type PriceComparable = {
+  title?: string;
+  address?: string;
+  price?: number;
+  area_m2?: number | null;
+  land_sotka?: number | null;
+  condition?: string;
+  completion_percent?: number | null;
+  source_name?: string;
+  url?: string | null;
+  note?: string | null;
+  is_mock?: boolean;
+};
+
+export type PriceReport = {
+  id: number;
+  task_id: number;
+  object_id: string;
+  value_min: number;
+  value_point: number;
+  value_max: number;
+  currency: string;
+  justification: string;
+  comparables: PriceComparable[];
+  confidence?: number | null;
+  data_source?: string;
+  is_mock: boolean;
+  prompt_version?: string;
+  created_at?: string;
+};
+
+export type PriceEstimate = {
+  can_estimate: boolean;
+  has_active_task?: boolean;
+  task?: {
+    id: number;
+    status: string;
+    error_message?: string | null;
+    created_at?: string;
+    completed_at?: string | null;
+  } | null;
+  report?: PriceReport | null;
+};
+
 export type BuildingObject = {
   id: string;
   name: string | null;
@@ -95,6 +139,7 @@ export type BuildingObject = {
     created_at?: string;
     completed_at?: string | null;
   }>;
+  price_estimate?: PriceEstimate;
 };
 
 export type Report = {

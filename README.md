@@ -1,6 +1,6 @@
 # СибКонтур — мониторинг строительства
 
-Версия 2.5. Банк ведёт залоговые объекты, оператор БПЛА загружает несколько ракурсов за один день, агент пишет один отчёт по всей группе снимков.
+Версия 3.5. Банк ведёт залоговые объекты, оператор БПЛА загружает несколько ракурсов за один день, агент пишет один отчёт по всей группе снимков, менеджер может запросить демонстрационную оценку стоимости.
 
 Сервисы не вызывают друг друга по HTTP. Общая точка — PostgreSQL `dronemon` и сеть `dronemon_net`. У каждого сервиса свой compose, чтобы поднимать их по отдельности.
 
@@ -36,6 +36,7 @@
 | `db-api/` | `dronemon-db-api` | Объекты, точки, алерты, задачи, импорт реестра |
 | `web/` | `dronemon-web` | Кабинеты менеджера и оператора |
 | `analysis-agent/` | `dronemon-analysis-agent` | Очередь → LLM → `analysis_reports` + HTML |
+| `price-mock-agent/` | `dronemon-price-mock-agent` | Мок-оценка стоимости по готовому отчёту анализа |
 
 ## Что умеет эта версия
 
@@ -46,6 +47,7 @@
 - импорт банковского Excel-реестра (`Территория`, кадастр, плановая дата, залог и т.д.);
 - план строительства свободным текстом для агента;
 - AI-отчёт на карточке объекта: готовность, чек-лист, кропы с разметкой, галерея фото, ссылка на HTML;
+- **Сделать оценку** — демо-диапазон цены по последнему completed-отчёту анализа (бейдж ДЕМО / МОК);
 - уведомление о новых фото оператора; объекты со свежими снимками сверху.
 
 Оператор:
@@ -74,6 +76,15 @@
 - если по объекту уже есть более новый завершённый отчёт, группа пропускается;
 - пишет `analysis_reports` и HTML в storage (`text/html`).
 
+Мок-оценка стоимости:
+
+- кнопка активна только если есть completed-отчёт анализа;
+- db-api агрегирует объект, план и отчёт в `price_search_tasks.spec_json`, LLM на дашборде нет;
+- повторный клик при `pending`/`processing` новую задачу не создаёт;
+- `price-mock-agent` поллит задачи, один LLM-вызов, пишет `price_reports`;
+- в карточке: диапазон, точка, обоснование, 3–6 выдуманных аналогов и явное предупреждение, что это демо;
+- это не парсинг рынка и не официальная оценка.
+
 ## Потоки данных
 
 1. Менеджер создаёт объект или импортирует реестр → db-api → PostgreSQL.
@@ -83,6 +94,7 @@
    фото максимальной даты съёмки, обложка = ближайшее к центроиду, статус загрузки `ready`.
 5. Агент берёт группу и пишет один отчёт на объект.
 6. Менеджер видит отчёт на карточке объекта.
+7. По кнопке «Сделать оценку» db-api ставит `price_search_tasks`, мок-агент пишет `price_reports`.
 
 ## Запуск
 
@@ -114,6 +126,11 @@ docker compose up -d --build
 
 cd ../analysis-agent
 cp .env.example .env
+docker compose up -d --build
+
+cd ../price-mock-agent
+cp .env.example .env
+# LLM_* те же, что у analysis-agent
 docker compose up -d --build
 ```
 
@@ -168,6 +185,7 @@ uvicorn app.main:app --reload --port 8001
 - `db-api/.env.example`
 - `web/.env.example`
 - `analysis-agent/.env.example`
+- `price-mock-agent/.env.example`
 
 Токен photo API живёт в Next.js BFF, не в браузерном бандле.
 
@@ -178,7 +196,7 @@ GPS-буфер: `VALIDATION__GPS_BUFFER_M` и `VALIDATION__CENTROID_BUFFER_M`, �
 Две независимые истории Alembic на одну БД:
 
 - `photo-preprocessing` — таблица `alembic_version` (ревизия `0002_multi_photo`: группа очереди)
-- `db-api` — таблица `alembic_version_db_api`
+- `db-api` — таблица `alembic_version_db_api` (ревизия `0002_price_mock`: `price_search_tasks`, `price_reports`)
 
 Ревизии photo-сервиса не переписываем. Таблицы агента (`analysis_reports`, `construction_plans`) создаются через `create_all` без FK на фото.
 
@@ -216,6 +234,11 @@ cd db-api && python scripts/seed_demo.py
 - `POST /v1/batches/{batch_id}/confirm` — отправить всю загрузку в работу
 - `POST /v1/batches/{batch_id}/objects/{object_id}/confirm` — отправить один объект
 - `GET /api/v1/storage/{bucket}/{key}` — файлы и HTML-отчёты
+
+Оценка стоимости (db-api, только менеджер на POST):
+
+- `GET /api/objects/{id}/price-estimate` — статус задачи и последний мок-отчёт
+- `POST /api/objects/{id}/price-estimate` — создать задание или вернуть уже активное
 
 ## Импорт реестра
 

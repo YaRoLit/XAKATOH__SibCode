@@ -45,6 +45,7 @@ fi
 
 echo "База: $DB_CONTAINER / $DB_NAME"
 echo "Будут очищены таблицы данных (схема останется):"
+echo "  price_reports, price_search_tasks,"
 echo "  analysis_reports, construction_plans, problem_actions, problem_alerts,"
 echo "  ai_reports, checkpoint_date_history, checkpoints,"
 echo "  processing_queue, surveys, batches, objects"
@@ -69,6 +70,8 @@ fi
 docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" <<'SQL'
 BEGIN;
 TRUNCATE TABLE
+  price_reports,
+  price_search_tasks,
   problem_actions,
   problem_alerts,
   analysis_reports,

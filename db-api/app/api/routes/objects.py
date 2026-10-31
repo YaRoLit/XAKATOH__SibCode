@@ -7,6 +7,7 @@ from app.api.deps import current_user, get_db, require_manager
 from app.db.models import User
 from app.schemas import ObjectCreate, ObjectUpdate, PlanIn
 from app.services import objects as object_service
+from app.services import price_estimate
 from app.services.alerts import get_plan, list_reports, upsert_plan
 
 router = APIRouter(prefix="/api/objects", tags=["objects"])
@@ -101,6 +102,7 @@ async def get_object(
     data.update(await object_service.object_photo_state(session, object_id))
     plan = await get_plan(session, object_id)
     data["construction_plan"] = {"description": plan.description or ""} if plan else {"description": ""}
+    data["price_estimate"] = await price_estimate.estimate_state(session, object_id)
     return data
 
 

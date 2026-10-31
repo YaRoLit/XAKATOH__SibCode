@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AiReportView } from "@/components/ai-report";
+import { PriceEstimateCard } from "@/components/price-estimate";
 import { Badge, Button, Card, PageHeader } from "@/components/ui";
-import { dbFetch, type BuildingObject, type ConstructionPlan } from "@/lib/api";
+import { dbFetch, type BuildingObject, type ConstructionPlan, type PriceEstimate } from "@/lib/api";
 import { formatDate, objectStatusLabel, shootLabel, shootTone } from "@/lib/status";
 
 export default function ObjectCardPage() {
@@ -118,6 +119,11 @@ export default function ObjectCardPage() {
           {planSaved ? <p className="text-sm text-forest">{planSaved}</p> : null}
         </div>
       </Card>
+      <PriceEstimateCard
+        objectId={obj.id}
+        estimate={obj.price_estimate}
+        onChanged={(next: PriceEstimate) => setObj((prev) => (prev ? { ...prev, price_estimate: next } : prev))}
+      />
       <div className="mt-4 min-w-0 space-y-4">
         <h2 className="font-serif text-2xl">AI-отчёты</h2>
         {(obj.analysis_jobs || []).some((job) => job.status === "pending" || job.status === "processing") ? (
