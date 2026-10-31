@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #1c211c;
+  background: #f7f4ee;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(44, 106, 74, 0.08), transparent 50%),
+    radial-gradient(900px 400px at 110% 0%, rgba(198, 161, 91, 0.12), transparent 45%),
+    #f7f4ee;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d5cfc2 transparent;
+}
+
+input,
+select,
+textarea {
+  outline: none;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  box-shadow: 0 0 0 3px rgba(44, 106, 74, 0.12);
+}

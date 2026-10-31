@@ -51,6 +51,12 @@ async def confirm(batch_id: str, session: AsyncSession = Depends(get_db)):
     return await batch_service.confirm(session, batch_id)
 
 
+@router.post("/{batch_id}/objects/{object_id}/confirm")
+async def confirm_object(batch_id: str, object_id: str, session: AsyncSession = Depends(get_db)):
+    await _get_or_404(session, batch_id)
+    return await batch_service.confirm_object(session, batch_id, object_id)
+
+
 async def _get_or_404(session: AsyncSession, batch_id: str):
     from app.db import repositories as repo
     batch = await repo.get_batch(session, batch_id)

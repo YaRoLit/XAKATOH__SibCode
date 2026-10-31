@@ -66,7 +66,7 @@ async def start_processing(session: AsyncSession, batch_id: str) -> None:
 
 async def confirm(session: AsyncSession, batch_id: str) -> dict:
     batch = await repo.get_batch(session, batch_id)
-    if batch is None or batch.status != "completed":
+    if batch is None or batch.status not in {"completed", "partially_confirmed"}:
         return {"status": "error", "message": f"Батч не готов к подтверждению (status={batch.status if batch else None})"}
     
     surveys = await repo.list_surveys(session, batch_id)
@@ -97,17 +97,93 @@ async def confirm(session: AsyncSession, batch_id: str) -> dict:
     if failed:
         return {"status": "error", "message": "Часть файлов не загружена...", "uploaded": uploaded, "failed": failed}
 
-    # Очистка временной папки
-    batch_dir = Path(settings.upload_dir) / batch_id
-    log.debug("confirm: attempting to remove temp dir %s", batch_dir)
-    
-    if batch_dir.exists():
-        import shutil
-        try:
-            shutil.rmtree(batch_dir)  # <-- ВАЖНО: без ignore_errors=True
-            log.debug("confirm: temp dir %s removed successfully", batch_dir)
-        except Exception as e:
-            log.error("confirm: FAILED to remove temp dir %s. Error: %s", batch_dir, e)
-            
+    await _reject_unmatched(session, surveys)
+    await _cleanup_temp_if_done(session, batch_id)
     await repo.set_batch_status(session, batch_id, "confirmed")
     return {"status": "ok", "uploaded_to_storage": uploaded}
+
+
+async def confirm_object(session: AsyncSession, batch_id: str, object_id: str) -> dict:
+    """Подтверждает validated-фото одного объекта. Остальные объекты батча не трогает."""
+    batch = await repo.get_batch(session, batch_id)
+    if batch is None or batch.status not in {"completed", "partially_confirmed"}:
+        return {
+            "status": "error",
+            "message": f"Батч не готов к подтверждению (status={batch.status if batch else None})",
+        }
+
+    surveys = await repo.list_surveys(session, batch_id)
+    target = [s for s in surveys if s.object_id == object_id]
+    if not target:
+        return {"status": "error", "message": f"В батче нет фото объекта {object_id}"}
+
+    failed = []
+    uploaded = 0
+    for s in target:
+        if s.status != "validated" or s.s3_key or not s.temp_path or not Path(s.temp_path).exists():
+            continue
+        raw_key = f"raw/{s.object_id}/{batch_id}/{s.filename}"
+        try:
+            storage.upload(raw_key, Path(s.temp_path).read_bytes())
+            await repo.update_survey(session, s.id, s3_key=raw_key)
+            await repo.insert_queue_row(session, s.id, s.object_id)
+            uploaded += 1
+            log.debug("confirm-object: survey=%s obj=%s -> %s", s.id, object_id, raw_key)
+        except Exception as e:
+            failed.append({"survey_id": s.id, "filename": s.filename, "error": str(e)})
+            log.error("confirm-object: survey=%s S3 FAILED: %s", s.id, e)
+
+    if failed:
+        return {"status": "error", "message": "Часть файлов объекта не загружена", "uploaded": uploaded, "failed": failed}
+
+    remaining = [
+        s for s in await repo.list_surveys(session, batch_id)
+        if s.status == "validated" and not s.s3_key
+    ]
+    if remaining:
+        await repo.set_batch_status(session, batch_id, "partially_confirmed")
+        return {
+            "status": "ok",
+            "uploaded_to_storage": uploaded,
+            "object_id": object_id,
+            "batch_status": "partially_confirmed",
+        }
+
+    await _reject_unmatched(session, await repo.list_surveys(session, batch_id))
+    await _cleanup_temp_if_done(session, batch_id)
+    await repo.set_batch_status(session, batch_id, "confirmed")
+    return {
+        "status": "ok",
+        "uploaded_to_storage": uploaded,
+        "object_id": object_id,
+        "batch_status": "confirmed",
+    }
+
+
+async def _reject_unmatched(session: AsyncSession, surveys) -> None:
+    for s in surveys:
+        if s.status == "needs_manual_match":
+            await repo.update_survey(
+                session, s.id, status="rejected",
+                validation_errors=(s.validation_errors or []) + [
+                    "Объект не определён до подтверждения; фото удалено из temp. "
+                    "Повторная загрузка разрешена."
+                ],
+            )
+
+
+async def _cleanup_temp_if_done(session: AsyncSession, batch_id: str) -> None:
+    leftover = [
+        s for s in await repo.list_surveys(session, batch_id)
+        if s.status == "validated" and not s.s3_key
+    ]
+    if leftover:
+        return
+    batch_dir = Path(settings.upload_dir) / batch_id
+    if not batch_dir.exists():
+        return
+    try:
+        shutil.rmtree(batch_dir)
+        log.debug("confirm: temp dir %s removed successfully", batch_dir)
+    except Exception as e:
+        log.error("confirm: FAILED to remove temp dir %s. Error: %s", batch_dir, e)

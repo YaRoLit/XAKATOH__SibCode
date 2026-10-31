@@ -1,0 +1,28 @@
+name: dronemon-web
+
+# Только фронт. db-api и photo-preprocessing поднимаются своими compose.
+# docker compose up -d --build
+# Для npm run dev этот файл не нужен — см. .env.example
+
+services:
+  web:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_DB_API_URL: ${NEXT_PUBLIC_DB_API_URL:-http://127.0.0.1:8001}
+    container_name: dronemon-web
+    env_file: .env
+    environment:
+      NEXT_PUBLIC_DB_API_URL: ${NEXT_PUBLIC_DB_API_URL:-http://127.0.0.1:8001}
+      PHOTO_API_URL: ${PHOTO_API_URL:-http://dronemon-api:8000}
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      dronemon_net:
+        aliases: [web]
+    restart: unless-stopped
+
+networks:
+  dronemon_net:
+    name: dronemon_net
+    external: true

@@ -1,0 +1,135 @@
+from datetime import date, datetime
+
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.session import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    login: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(32))
+    display_name: Mapped[str] = mapped_column(String(128))
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Object(Base):
+    __tablename__ = "objects"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    cadastral_number: Mapped[str] = mapped_column(String(64), unique=True)
+    address: Mapped[str] = mapped_column(Text)
+    plot_corners: Mapped[list] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    name: Mapped[str | None] = mapped_column(String(255))
+    material: Mapped[str | None] = mapped_column(String(64))
+    credit_issued_at: Mapped[date | None] = mapped_column(Date)
+    planned_completion_at: Mapped[date | None] = mapped_column(Date)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    checkpoints: Mapped[list["Checkpoint"]] = relationship(back_populates="object_", order_by="Checkpoint.planned_date")
+
+
+class Checkpoint(Base):
+    __tablename__ = "checkpoints"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    object_id: Mapped[str] = mapped_column(ForeignKey("objects.id"), index=True)
+    title: Mapped[str] = mapped_column(String(128))
+    planned_date: Mapped[date] = mapped_column(Date, index=True)
+    expected_readiness: Mapped[int] = mapped_column(Integer)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    object_: Mapped[Object] = relationship(back_populates="checkpoints")
+    date_history: Mapped[list["CheckpointDateHistory"]] = relationship(back_populates="checkpoint")
+
+
+class CheckpointDateHistory(Base):
+    __tablename__ = "checkpoint_date_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    checkpoint_id: Mapped[str] = mapped_column(ForeignKey("checkpoints.id"), index=True)
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    old_date: Mapped[date] = mapped_column(Date)
+    new_date: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    checkpoint: Mapped[Checkpoint] = relationship(back_populates="date_history")
+
+
+class AiReport(Base):
+    __tablename__ = "ai_reports"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    object_id: Mapped[str] = mapped_column(ForeignKey("objects.id"), index=True)
+    checkpoint_id: Mapped[str | None] = mapped_column(ForeignKey("checkpoints.id"))
+    agent_run_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    raw_json: Mapped[dict] = mapped_column(JSONB)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ProblemAlert(Base):
+    __tablename__ = "problem_alerts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    object_id: Mapped[str] = mapped_column(ForeignKey("objects.id"), index=True)
+    report_id: Mapped[str | None] = mapped_column(ForeignKey("ai_reports.id"))
+    title: Mapped[str] = mapped_column(String(255))
+    summary: Mapped[str | None] = mapped_column(Text)
+    severity: Mapped[str | None] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(32), default="new", index=True)
+    raw_item: Mapped[dict | None] = mapped_column(JSONB)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    actions: Mapped[list["ProblemAction"]] = relationship(back_populates="alert", order_by="ProblemAction.created_at")
+
+
+class ProblemAction(Base):
+    __tablename__ = "problem_actions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    alert_id: Mapped[str] = mapped_column(ForeignKey("problem_alerts.id"), index=True)
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(64))
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    alert: Mapped[ProblemAlert] = relationship(back_populates="actions")
+
+
+class Survey(Base):
+    """Таблица первого сервиса, только чтение для статусов съёмки и кабинета оператора."""
+
+    __tablename__ = "surveys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(64), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    validation_errors: Mapped[list | None] = mapped_column(JSONB)
+    object_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    coverage: Mapped[float | None] = mapped_column(Float)
+    s3_key: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Batch(Base):
+    __tablename__ = "batches"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    operator_id: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

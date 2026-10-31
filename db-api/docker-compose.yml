@@ -1,0 +1,21 @@
+name: dronemon-db-api
+
+# Только бизнес-API менеджера и задач оператора. Агента здесь нет.
+# docker compose up -d --build
+
+services:
+  db-api:
+    build: .
+    container_name: dronemon-db-api
+    env_file: .env
+    ports:
+      - "127.0.0.1:${DB_API_PORT:-8001}:8000"
+    networks:
+      dronemon_net:
+        aliases: [db-api]
+    restart: unless-stopped
+
+networks:
+  dronemon_net:
+    name: dronemon_net
+    external: true

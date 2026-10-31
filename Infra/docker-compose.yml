@@ -1,5 +1,8 @@
 name: dronemon-infra
 
+# Поднимать первым: создаёт сеть и PostgreSQL.
+# docker compose up -d
+
 services:
   db:
     image: postgres:15-alpine
@@ -8,9 +11,13 @@ services:
       POSTGRES_DB: dronemon
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: secret
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-    networks: [dronemon_net]
+    networks:
+      dronemon_net:
+        aliases: [db]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U admin -d dronemon"]
       interval: 5s
@@ -23,4 +30,3 @@ volumes:
 networks:
   dronemon_net:
     name: dronemon_net
-    external: true

@@ -1,16 +1,21 @@
 name: dronemon-api
 
+# Только сервис проверки фото. Сеть и БД — из Infra.
+# docker compose up -d --build
+
 services:
   api:
     build: .
     container_name: dronemon-api
     env_file: .env
     ports:
-      - "127.0.0.1:${API_PORT:-8000}:8000"
+      - "127.0.0.1:${API_PORT:-8222}:8000"
     volumes:
       - uploads:/tmp/uploads
       - s3_storage:/s3-storage
-    networks: [dronemon_net]
+    networks:
+      dronemon_net:
+        aliases: [api]
     restart: unless-stopped
 
 volumes:
@@ -19,4 +24,5 @@ volumes:
 
 networks:
   dronemon_net:
+    name: dronemon_net
     external: true
