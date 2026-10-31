@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 
 from app.api.routes import batches, health, surveys
+from app.api.routes import storage as storage_routes
 from app.core.logging import get_logger
 from app.db import repositories as repo
 from app.db.session import SessionLocal
@@ -39,3 +40,4 @@ surveys.router.dependencies.append(Depends(check_auth))
 
 app.include_router(batches.router)
 app.include_router(surveys.router)
+app.include_router(storage_routes.router)

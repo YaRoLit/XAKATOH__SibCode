@@ -50,14 +50,18 @@ def extract(file_bytes: bytes) -> dict:
         xmp = img.info.get("xmp", b"")
         xmp = xmp.decode("utf-8", errors="ignore") if isinstance(xmp, bytes) else (xmp or "")
         alt = re.search(r'dji:RelativeAltitude="([^"]+)"', xmp)
-        if not alt:
-            errors.append("Отсутствует высота полета (RelativeAltitude)")
-        else:
+        if alt:
             rel = float(alt.group(1))
             meta["altitude"] = {"relative": rel}
-            if not (settings.validation.altitude_min_m <= rel <= settings.validation.altitude_max_m):
-                errors.append(f"Высота съемки {rel:.1f} м вне диапазона "
-                              f"{settings.validation.altitude_min_m}-{settings.validation.altitude_max_m} м")
+            # Временно не проверяем высоту: RelativeAltitude у части снимков некорректна
+            # и отсекает валидные фото (отрицательные / околонулевые значения).
+            # if not alt:
+            #     errors.append("Отсутствует высота полета (RelativeAltitude)")
+            # elif not (settings.validation.altitude_min_m <= rel <= settings.validation.altitude_max_m):
+            #     errors.append(
+            #         f"Высота съемки {rel:.1f} м вне диапазона "
+            #         f"{settings.validation.altitude_min_m}-{settings.validation.altitude_max_m} м"
+            #     )
 
         yaw = re.search(r'dji:GimbalYawDegree="([^"]+)"', xmp)
         pitch = re.search(r'dji:GimbalPitchDegree="([^"]+)"', xmp)

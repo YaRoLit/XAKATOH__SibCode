@@ -36,6 +36,24 @@ export default function ManagerDashboard() {
           </Card>
         ))}
       </div>
+      {(data.recent_photos || []).length > 0 ? (
+        <Card className="mt-6 p-5">
+          <h2 className="font-serif text-xl">Новые фото от оператора</h2>
+          <div className="mt-4 space-y-3">
+            {(data.recent_photos || []).map((alert) => (
+              <Link key={alert.id} href={`/manager/objects/${alert.object_id}`} className="block rounded-xl bg-paper px-3 py-2 hover:bg-line/50">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm">{alert.object_name || alert.title}</p>
+                    <p className="text-xs text-muted">{alert.summary}</p>
+                  </div>
+                  <Badge className="bg-forest/10 text-forestDark">Новое фото</Badge>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      ) : null}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Card className="p-5">
           <h2 className="font-serif text-xl">Ближайшие контрольные точки</h2>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Отчёт агента · {{ object.cadastral_number or object.object_id }}</title>
+  <style>
+    body { margin: 0; overflow-x: hidden; font-family: "Segoe UI", Arial, sans-serif; background: #F5F8F5; color: #1A1A1A; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 28px 20px 48px; overflow-x: hidden; }
+    .card { background: #fff; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.06); padding: 20px 22px; margin-bottom: 16px; overflow: hidden; }
+    h1 { margin: 0 0 8px; font-size: 28px; overflow-wrap: anywhere; }
+    h2 { margin: 0 0 12px; font-size: 20px; color: #00874A; }
+    p, td, .muted { overflow-wrap: anywhere; word-break: break-word; }
+    .muted { color: #5b635b; font-size: 14px; }
+    .alert { background: #FDECEC; color: #E53935; border: 1px solid #F5B7B1; }
+    .warn { background: #FFF6E5; color: #B7791F; border: 1px solid #F5D7A1; }
+    .ok { background: #E8F7EC; color: #00874A; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    .kpi { background: #F5F8F5; border-radius: 12px; padding: 14px; min-width: 0; }
+    .kpi b { display: block; font-size: 28px; color: #21A038; overflow-wrap: anywhere; }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #E6EEE6; }
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; background: #21A038; color: #fff; font-size: 12px; }
+    img.hero { width: 100%; max-width: 100%; max-height: 420px; object-fit: contain; border-radius: 12px; background: #eef3ee; }
+    .crops { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .crop { min-width: 0; overflow: hidden; }
+    .crop img { width: 100%; max-width: 100%; border-radius: 10px; }
+    .scheme { width: 100%; max-width: 220px; height: 140px; background: #eef3ee; position: relative; border-radius: 8px; overflow: hidden; }
+    .scheme i { position: absolute; border: 2px solid #21A038; background: rgba(33,160,56,.15); max-width: 100%; max-height: 100%; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  {% if report.attention_required %}
+  <div class="card alert">
+    <strong>Требует внимания.</strong>
+    <p>{{ report.attention_reason or "Агент отметил проблему по снимку." }}</p>
+  </div>
+  {% endif %}
+  {% if report.agent_status != "completed" %}
+  <div class="card alert">
+    <strong>Статус: {{ report.agent_status }}</strong>
+    <p>{{ report.error_message or "Анализ не завершён штатно." }}</p>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <p class="muted">{{ report.report_mode }} · промпт {{ report.prompt_version }} · уверенность {{ report.overall_confidence }}</p>
+    <h1>{{ object.address or "Объект" }}</h1>
+    <p class="muted">Кадастр {{ object.cadastral_number or "—" }} · съёмка {{ report.captured_at }}</p>
+    {% if original_url %}<p><img class="hero" src="{{ original_url }}" alt="Снимок" /></p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Ключевые цифры</h2>
+    <div class="grid">
+      <div class="kpi"><span class="muted">Этап</span><b>{{ report.detected_stage or "—" }}</b></div>
+      <div class="kpi"><span class="muted">Прогресс этапа</span><b>{% if report.stage_progress_percent is not none %}{{ report.stage_progress_percent }}%{% else %}—{% endif %}</b></div>
+      <div class="kpi"><span class="muted">Общая готовность</span><b>{% if report.progress_percent is not none %}{{ report.progress_percent }}%{% else %}—{% endif %}</b></div>
+    </div>
+    {% if payload.progress_comment %}<p>{{ payload.progress_comment }}</p>{% endif %}
+    {% if payload.stage_progress_comment %}<p class="muted">{{ payload.stage_progress_comment }}</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Динамика</h2>
+    <p>Предыдущий отчёт: {{ report.prev_report_id or "нет" }}</p>
+    <p>Δ {{ report.progress_delta if report.progress_delta is not none else "—" }} · дней {{ report.days_since_prev if report.days_since_prev is not none else "—" }}</p>
+    <p><span class="badge">{{ report.movement_status or "—" }}</span></p>
+  </div>
+
+  {% if report.report_mode == "with_plan" %}
+  <div class="card">
+    <h2>Соответствие плану</h2>
+    <p>Статус: {{ payload.compliance_status or "—" }}</p>
+    <p>Отклонение, дни: {{ payload.deviation_days if payload.deviation_days is not none else "—" }} · {{ payload.deviation_severity or "—" }}</p>
+    <p>Материалы: {{ payload.materials_status or "—" }}</p>
+    {% if payload.plan_understanding %}<p class="muted">Как понял план: {{ payload.plan_understanding }}</p>{% endif %}
+    {% if payload.compliance_comment %}<p>{{ payload.compliance_comment }}</p>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Чек-лист маркеров</h2>
+    <div class="table-wrap">
+    <table>
+      <tr><th>Признак</th><th>Статус</th><th>Зона</th><th>Уверенность</th><th>Примечание</th></tr>
+      {% for item in payload.checklist or [] %}
+      <tr>
+        <td>{{ item.feature }}</td>
+        <td>{{ item.status }}</td>
+        <td>{{ item.location }}</td>
+        <td>{{ item.confidence }}</td>
+        <td>{{ item.note or "" }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Коммуникации и проживание</h2>
+    {% if payload.utilities %}
+    <p>Электричество: {{ payload.utilities.electricity or "—" }} · Газ: {{ payload.utilities.gas or "—" }} · Вода: {{ payload.utilities.water or "—" }} · Канализация: {{ payload.utilities.sewerage or "—" }}</p>
+    {% endif %}
+    {% if payload.utilities_comment %}<p>{{ payload.utilities_comment }}</p>{% endif %}
+    <p>Признаки проживания: {{ payload.looks_residential }}</p>
+    {% if payload.residential_comment %}<p class="muted">{{ payload.residential_comment }}</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Кропы</h2>
+    <div class="crops">
+      {% for crop in payload.crops_meta or [] %}
+      <div class="crop">
+        {% if crop.url %}<img src="{{ crop.url }}" alt="crop {{ crop.index }}" />{% endif %}
+        <p>{{ crop.index }}. {{ crop.reason }}</p>
+        {% if crop.bbox %}
+        <div class="scheme"><i style="left:{{ crop.bbox.xmin / 10 }}%; top:{{ crop.bbox.ymin / 10 }}%; width:{{ (crop.bbox.xmax - crop.bbox.xmin) / 10 }}%; height:{{ (crop.bbox.ymax - crop.bbox.ymin) / 10 }}%"></i></div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Наблюдения и метрики</h2>
+    <p>Качество снимка: {{ report.image_quality or "—" }} · object_match: {{ report.object_match or "—" }}</p>
+    <p class="muted">LLM вызовов {{ report.llm_calls }} · кропов {{ report.crops_used }} · токены in/out {{ report.tokens_in }}/{{ report.tokens_out }} · {{ report.processing_ms }} мс</p>
+  </div>
+</div>
+</body>
+</html>

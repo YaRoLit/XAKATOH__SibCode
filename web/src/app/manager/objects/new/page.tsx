@@ -23,6 +23,10 @@ export default function NewObjectPage() {
   const [lat, setLat] = useState("");
   const [lon, setLon] = useState("");
 
+  function cornersValid(count = corners.length) {
+    return count === 1 || count >= 4;
+  }
+
   function addCorner() {
     const a = Number(lat);
     const b = Number(lon);
@@ -37,8 +41,8 @@ export default function NewObjectPage() {
   }
 
   async function submit() {
-    if (corners.length < 4) {
-      setError("Нужно минимум четыре точки");
+    if (!cornersValid()) {
+      setError("Укажите одну точку участка или не меньше четырёх углов");
       return;
     }
     setError("");
@@ -81,13 +85,21 @@ export default function NewObjectPage() {
           ) : null}
           {step === 2 ? (
             <div>
-              <p className="mb-3 text-sm text-muted">Добавьте угловые точки по часовой стрелке. Минимум четыре. Карты в MVP нет.</p>
+              <p className="mb-3 text-sm text-muted">
+                Можно одну точку участка или полигон из четырёх и более углов по часовой стрелке. Две или три точки нельзя. Карты в MVP нет.
+              </p>
               <div className="mb-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                 <Field label="Широта"><Input value={lat} onChange={(e) => setLat(e.target.value)} placeholder="54.7442888" /></Field>
                 <Field label="Долгота"><Input value={lon} onChange={(e) => setLon(e.target.value)} placeholder="83.0844121" /></Field>
                 <div className="flex items-end"><Button type="button" onClick={addCorner}>Добавить точку</Button></div>
               </div>
               <Button type="button" variant="outline" disabled className="mb-4 opacity-70">Загрузить границы из документов · в будущем</Button>
+              {corners.length === 2 || corners.length === 3 ? (
+                <p className="mb-3 text-sm text-clay">Сейчас {corners.length} точки. Оставьте одну или добавьте до четырёх и больше.</p>
+              ) : null}
+              {corners.length === 1 ? (
+                <p className="mb-3 text-sm text-forest">Достаточно одной точки. Можно продолжить или набрать полигон из 4+ углов.</p>
+              ) : null}
               <div className="space-y-2">
                 {corners.map((c, i) => (
                   <div key={`${c.lat}-${c.lon}-${i}`} className="flex items-center justify-between rounded-xl bg-paper px-3 py-2 text-sm">
@@ -111,7 +123,11 @@ export default function NewObjectPage() {
               <p><b>{form.name}</b> · {form.cadastral_number}</p>
               <p className="text-muted">{form.address}</p>
               <p>{form.material} · кредит {form.credit_issued_at} · план {form.planned_completion_at}</p>
-              <p className="text-muted">После сохранения система создаст 4 контрольные точки.</p>
+              <p className="text-muted">
+                {corners.length === 1
+                  ? "Граница задана одной точкой. После сохранения система создаст 4 контрольные точки."
+                  : `Граница задана полигоном из ${corners.length} точек. После сохранения система создаст 4 контрольные точки.`}
+              </p>
               {corners.map((c, i) => <p key={i}>Точка {i + 1}: {c.lat}, {c.lon}</p>)}
             </div>
           ) : null}
@@ -121,8 +137,8 @@ export default function NewObjectPage() {
           <Button variant="outline" disabled={step === 1} onClick={() => setStep((s) => s - 1)}>Назад</Button>
           {step < 3 ? (
             <Button onClick={() => {
-              if (step === 2 && corners.length < 4) {
-                setError("Нужно минимум четыре точки");
+              if (step === 2 && !cornersValid()) {
+                setError("Укажите одну точку участка или не меньше четырёх углов");
                 return;
               }
               setError("");

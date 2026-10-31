@@ -66,6 +66,43 @@ class CheckpointDateHistory(Base):
     checkpoint: Mapped[Checkpoint] = relationship(back_populates="date_history")
 
 
+class ConstructionPlan(Base):
+    __tablename__ = "construction_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    object_id: Mapped[str] = mapped_column(ForeignKey("objects.id"), unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now())
+
+
+class AnalysisReport(Base):
+    __tablename__ = "analysis_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    survey_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    object_id: Mapped[str] = mapped_column(ForeignKey("objects.id"), index=True)
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime)
+    report_mode: Mapped[str | None] = mapped_column(String(32))
+    agent_status: Mapped[str | None] = mapped_column(String(32), index=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    object_match: Mapped[str | None] = mapped_column(String(32))
+    detected_stage: Mapped[str | None] = mapped_column(String(64))
+    stage_progress_percent: Mapped[int | None] = mapped_column(Integer)
+    progress_percent: Mapped[int | None] = mapped_column(Integer)
+    attention_required: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    attention_reason: Mapped[str | None] = mapped_column(Text)
+    overall_confidence: Mapped[float | None] = mapped_column(Float)
+    image_quality: Mapped[str | None] = mapped_column(String(32))
+    movement_status: Mapped[str | None] = mapped_column(String(64))
+    progress_delta: Mapped[float | None] = mapped_column(Float)
+    days_since_prev: Mapped[int | None] = mapped_column(Integer)
+    report_json: Mapped[dict | None] = mapped_column(JSONB)
+    report_html_key: Mapped[str | None] = mapped_column(Text)
+    prompt_version: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now())
+
+
 class AiReport(Base):
     __tablename__ = "ai_reports"
 

@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_db, require_manager
 from app.db.models import Checkpoint, Object, User
 from app.services import checkpoints as checkpoint_service
-from app.services.alerts import list_alerts, serialize_alert
+from app.services.alerts import list_alerts
 from app.services.objects import problem_object_ids
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -52,13 +52,16 @@ async def dashboard(session: AsyncSession = Depends(get_db), _: User = Depends(r
         if len(upcoming) >= 8:
             break
 
-    recent = [await serialize_alert(session, a) for a in (await list_alerts(session))[:8]]
+    recent = await list_alerts(session)
+    photo_news = [a for a in recent if a.get("severity") == "info" or (a.get("raw_item") or {}).get("kind") == "new_photo"]
+    problems = [a for a in recent if a not in photo_news]
     return {
         "objects_in_progress": objects_in_progress,
         "objects_with_problems": len(problem_ids),
         "overdue_checkpoints": overdue,
         "upcoming_checkpoints": upcoming,
-        "recent_alerts": recent,
+        "recent_alerts": problems[:8],
+        "recent_photos": photo_news[:8],
         "horizon_days": 14,
         "today": today,
     }

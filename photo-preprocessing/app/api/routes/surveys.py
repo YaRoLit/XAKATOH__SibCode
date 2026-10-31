@@ -46,16 +46,10 @@ async def photo(survey_id: int, session: AsyncSession = Depends(get_db)):
     
     if not s.temp_path or not Path(s.temp_path).exists():
         raise HTTPException(404, "Изображение недоступно (возможно, батч уже подтвержден и очищен)")
-    
-    if not s.metadata_ or not s.object_ or not s.object_.plot_corners:
-        reason = "Объект не привязан (статус needs_manual_match)" if s.status == "needs_manual_match" else "Неполные метаданные"
-        raise HTTPException(
-            400, 
-            f"Невозможно отрисовать границы: {reason}. Сначала привяжите объект к снимку."
-        )
 
+    corners = (s.object_.plot_corners if s.object_ else None) or []
     try:
-        img_bytes = render_on_demand(s.temp_path, s.metadata_, s.object_.plot_corners)
+        img_bytes = render_on_demand(s.temp_path, s.metadata_ or {}, corners)
         return Response(content=img_bytes, media_type="image/jpeg")
     except Exception as e:
         raise HTTPException(500, f"Ошибка генерации превью: {str(e)}")

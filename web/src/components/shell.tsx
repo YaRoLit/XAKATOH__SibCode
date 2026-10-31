@@ -39,7 +39,7 @@ export function Shell({ role, children }: { role: "manager" | "operator"; childr
   const links = role === "manager" ? managerLinks : operatorLinks;
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[240px_1fr]">
+    <div className="min-h-screen overflow-x-hidden lg:grid lg:grid-cols-[240px_1fr]">
       <aside className="border-b border-line bg-card/80 px-4 py-4 backdrop-blur lg:border-b-0 lg:border-r lg:px-5 lg:py-6">
         <div className="mb-6">
           <p className="font-serif text-xl">СибКонтур</p>
@@ -78,7 +78,7 @@ export function Shell({ role, children }: { role: "manager" | "operator"; childr
           </button>
         </div>
       </aside>
-      <main className="px-4 py-6 lg:px-8 lg:py-8">{user ? children : null}</main>
+      <main className="min-w-0 overflow-x-hidden px-4 py-6 lg:px-8 lg:py-8">{user ? children : null}</main>
     </div>
   );
 }

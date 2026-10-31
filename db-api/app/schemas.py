@@ -26,11 +26,35 @@ class Corner(BaseModel):
     lon: float
 
 
+def validate_plot_corners(value: list[Corner]) -> list[Corner]:
+    n = len(value)
+    if n == 1 or n >= 4:
+        return value
+    raise ValueError("Укажите одну точку участка или не меньше четырёх угловых точек")
+
+
+class ObjectImportCreate(BaseModel):
+    name: str
+    cadastral_number: str
+    address: str
+    plot_corners: list[Corner] = []
+    credit_issued_at: date
+    planned_completion_at: date
+    material: str = "иное"
+
+    @field_validator("plot_corners")
+    @classmethod
+    def corners_ok(cls, value: list[Corner]) -> list[Corner]:
+        if not value:
+            return value
+        return validate_plot_corners(value)
+
+
 class ObjectCreate(BaseModel):
     name: str
     cadastral_number: str
     address: str
-    plot_corners: list[Corner] = Field(min_length=4)
+    plot_corners: list[Corner] = Field(min_length=1)
     credit_issued_at: date
     planned_completion_at: date
     material: str
@@ -38,19 +62,24 @@ class ObjectCreate(BaseModel):
     @field_validator("plot_corners")
     @classmethod
     def corners_unique_enough(cls, value: list[Corner]) -> list[Corner]:
-        if len(value) < 4:
-            raise ValueError("Нужно минимум четыре угловые точки участка")
-        return value
+        return validate_plot_corners(value)
 
 
 class ObjectUpdate(BaseModel):
     name: str | None = None
     cadastral_number: str | None = None
     address: str | None = None
-    plot_corners: list[Corner] | None = Field(default=None, min_length=4)
+    plot_corners: list[Corner] | None = Field(default=None, min_length=1)
     credit_issued_at: date | None = None
     planned_completion_at: date | None = None
     material: str | None = None
+
+    @field_validator("plot_corners")
+    @classmethod
+    def corners_ok(cls, value: list[Corner] | None) -> list[Corner] | None:
+        if value is None:
+            return value
+        return validate_plot_corners(value)
 
 
 class CheckpointDateUpdate(BaseModel):
@@ -111,6 +140,10 @@ class AlertOut(BaseModel):
     raw_item: dict | None
     created_at: datetime
     actions: list[dict[str, Any]] = []
+
+
+class PlanIn(BaseModel):
+    description: str = ""
 
 
 class ReportOut(BaseModel):

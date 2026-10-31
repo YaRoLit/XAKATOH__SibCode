@@ -31,8 +31,8 @@ export default function OperatorHome() {
       <PageHeader
         eyebrow="Оператор БПЛА"
         title="Смены и съёмка"
-        description="Задачи появляются из объектов, которые менеджер записал в общую базу."
-        action={<Link href="/operator/upload"><Button>Загрузить пачку</Button></Link>}
+        description="В смену попадают только объекты с координатами участка. Без точек пилот задачу не видит."
+        action={<Link href="/operator/upload"><Button>Загрузить фото</Button></Link>}
       />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-5 lg:col-span-2">
@@ -45,7 +45,10 @@ export default function OperatorHome() {
                   <div>
                     <p className="font-medium">{task.object_name}</p>
                     <p className="text-xs text-muted">{task.cadastral_number} · {task.address}</p>
-                    <p className="text-xs text-muted">{task.title} · план {formatDate(task.planned_date)}</p>
+                    <p className="text-xs text-muted">
+                      {(task.checkpoint_titles || [task.title]).join(" · ")}
+                      {task.planned_date ? ` · ближайший план ${formatDate(task.planned_date)}` : ""}
+                    </p>
                   </div>
                   <Badge className={shootTone[task.shoot_status]}>{shootLabel[task.shoot_status]}</Badge>
                 </div>

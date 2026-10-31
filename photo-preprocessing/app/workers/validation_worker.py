@@ -18,7 +18,7 @@ log = get_logger(__name__)
 async def _process_single_survey(session, survey, objects):
     """Обработка одного файла. Вынесена в отдельную функцию для asyncio.wait_for."""
     meta = survey.metadata_
-    if not meta or "coordinates" not in meta or "altitude" not in meta:
+    if not meta or "coordinates" not in meta:
         await repo.update_survey(
             session, survey.id, status="rejected",
             validation_errors=survey.validation_errors + ["Неполные метаданные для валидации"]
@@ -30,7 +30,8 @@ async def _process_single_survey(session, survey, objects):
         meta["coordinates"]["lat"],
         meta["coordinates"]["lon"],
         objects,
-        settings.validation.gps_buffer_m
+        settings.validation.gps_buffer_m,
+        settings.validation.centroid_buffer_m,
     )
     if obj is None:
         await repo.update_survey(
@@ -49,7 +50,15 @@ async def _process_single_survey(session, survey, objects):
         log.debug("worker: survey=%s rejected (imread failed)", survey.id)
         return
 
-    coverage, norm, norm_corners = coverage_calculator.compute(img, meta, obj.plot_corners)
+    corners = obj.plot_corners or []
+    if len(corners) == 1:
+        # Одна точка = центроид: GPS уже попал в радиус, покрытие по полигону не считаем.
+        coverage = 1.0
+    elif "altitude" not in (meta or {}):
+        # Временно: высота отключена, GSD-покрытие без неё ненадёжно.
+        coverage = 1.0
+    else:
+        coverage, _, _ = coverage_calculator.compute(img, meta, corners)
 
     if coverage < settings.validation.min_coverage:
         await repo.update_survey(
@@ -122,6 +131,15 @@ async def run_validation(batch_id: str) -> None:
             log.error("worker: dedup pass failed: %s", e, exc_info=True)
 
         await repo.set_batch_status(session, batch_id, "completed")
+        try:
+            grouped: dict[str, list[str]] = defaultdict(list)
+            for survey in await repo.list_surveys(session, batch_id):
+                if survey.status == "validated" and survey.object_id:
+                    grouped[survey.object_id].append(survey.filename)
+            for object_id, names in grouped.items():
+                await repo.notify_new_photos(session, object_id, names, batch_id)
+        except Exception as e:
+            log.error("worker: photo notify failed: %s", e, exc_info=True)
     log.debug("worker: batch=%s completed", batch_id)
 
 

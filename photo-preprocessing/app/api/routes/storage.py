@@ -15,7 +15,12 @@ async def get_file(bucket: str, key: str):
     path = storage.file_path(key)
     if path is None:
         raise HTTPException(status_code=404, detail="File not found")
-    media_type = "image/jpeg"
-    if key.lower().endswith(".png"):
+    media_type = "application/octet-stream"
+    lower = key.lower()
+    if lower.endswith(".jpg") or lower.endswith(".jpeg"):
+        media_type = "image/jpeg"
+    elif lower.endswith(".png"):
         media_type = "image/png"
+    elif lower.endswith(".html"):
+        media_type = "text/html; charset=utf-8"
     return FileResponse(path, media_type=media_type)

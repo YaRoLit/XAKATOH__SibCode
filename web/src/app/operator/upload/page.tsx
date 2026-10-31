@@ -13,6 +13,24 @@ type FileResult = {
   errors?: string[];
 };
 
+type SurveyDetails = {
+  survey_id: number;
+  batch_id: string;
+  filename: string;
+  status: string;
+  errors?: string[] | null;
+  metadata?: Record<string, unknown> | null;
+  coverage?: number | null;
+  duplicate_of?: number | null;
+  has_preview?: boolean;
+  object?: {
+    object_id: string;
+    cadastral_number?: string;
+    address?: string;
+    plot_corners?: Array<{ lat: number; lon: number }>;
+  } | null;
+};
+
 type Group = {
   object_id: string;
   files: FileResult[];
@@ -25,7 +43,7 @@ export default function UploadPage() {
   const [results, setResults] = useState<FileResult[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  const [confirmed, setConfirmed] = useState<Record<string, string>>({});
+  const [batchConfirm, setBatchConfirm] = useState("");
 
   const groups = useMemo(() => {
     const map = new Map<string, FileResult[]>();
@@ -36,12 +54,15 @@ export default function UploadPage() {
     return Array.from(map.entries()).map(([object_id, groupFiles]) => ({ object_id, files: groupFiles })) as Group[];
   }, [results]);
 
+  const canConfirm = Boolean(batchId) && results.some((f) => f.status === "validated") && !batchConfirm.startsWith("отправлено");
+
   async function start() {
     if (files.length === 0) {
       setError("Выберите фотографии");
       return;
     }
     setError("");
+    setBatchConfirm("");
     setBusy("Создаём пачку…");
     try {
       const created = await photoFetch<{ batch_id: string }>("/batches?operator_id=user_operator", { method: "POST" });
@@ -68,17 +89,21 @@ export default function UploadPage() {
     }
   }
 
-  async function confirm(objectId: string) {
+  async function confirmBatch() {
     if (!batchId) return;
-    setBusy(`Подтверждаем ${objectId}…`);
+    setBusy("Согласовываем батч…");
     try {
-      const res = await photoFetch<{ status: string; message?: string; batch_status?: string }>(
-        `/batches/${batchId}/objects/${objectId}/confirm`,
+      const res = await photoFetch<{ status: string; message?: string; uploaded_to_storage?: number }>(
+        `/batches/${batchId}/confirm`,
         { method: "POST" },
       );
-      setConfirmed((prev) => ({ ...prev, [objectId]: res.status === "ok" ? "подтверждено" : res.message || res.status }));
+      if (res.status === "ok") {
+        setBatchConfirm(`отправлено в хранилище: ${res.uploaded_to_storage ?? 0} файл(ов). Агент возьмёт их в работу.`);
+      } else {
+        setBatchConfirm(res.message || res.status);
+      }
     } catch (e) {
-      setConfirmed((prev) => ({ ...prev, [objectId]: e instanceof Error ? e.message : "ошибка" }));
+      setBatchConfirm(e instanceof Error ? e.message : "ошибка согласования");
     } finally {
       setBusy("");
     }
@@ -89,7 +114,7 @@ export default function UploadPage() {
       <PageHeader
         eyebrow="Загрузка"
         title="Общая пачка без выбора объекта"
-        description="Сервис проверки сам сопоставит GPS с границами участков. Подтверждение — отдельно по каждому объекту."
+        description="После проверки откройте подробности каждого фото. В хранилище и к агенту файлы уходят только после согласования батча."
       />
       <Card className="p-5">
         <input
@@ -107,18 +132,29 @@ export default function UploadPage() {
         {error ? <p className="mt-2 text-sm text-clay">{error}</p> : null}
       </Card>
 
+      {results.length > 0 ? (
+        <Card className="mt-4 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-serif text-xl">Согласование батча</h2>
+              <p className="text-sm text-muted">Проверьте миниатюры и метаданные, затем отправьте validated-фото в хранилище.</p>
+            </div>
+            <Button onClick={confirmBatch} disabled={!canConfirm || Boolean(busy)}>
+              Согласовать батч
+            </Button>
+          </div>
+          {batchConfirm ? (
+            <p className={`mt-3 text-sm ${batchConfirm.startsWith("отправлено") ? "text-forest" : "text-clay"}`}>
+              {batchConfirm}
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
+
       <div className="mt-4 space-y-4">
         {groups.map((group) => (
           <Card key={group.object_id} className="p-5">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="font-serif text-xl">{group.object_id === "unmatched" ? "Без объекта" : `Объект ${group.object_id}`}</h2>
-              {group.object_id !== "unmatched" ? (
-                <Button onClick={() => confirm(group.object_id)} disabled={Boolean(busy)}>
-                  Подтвердить объект
-                </Button>
-              ) : null}
-            </div>
-            {confirmed[group.object_id] ? <p className="mt-2 text-sm text-forest">{confirmed[group.object_id]}</p> : null}
+            <h2 className="font-serif text-xl">{group.object_id === "unmatched" ? "Без объекта" : `Объект ${group.object_id}`}</h2>
             <div className="mt-3 space-y-2">
               {group.files.map((file) => (
                 <FileRow key={file.survey_id} file={file} />
@@ -133,6 +169,26 @@ export default function UploadPage() {
 
 function FileRow({ file }: { file: FileResult }) {
   const [open, setOpen] = useState(false);
+  const [details, setDetails] = useState<SurveyDetails | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [imgBroken, setImgBroken] = useState(false);
+  const failed = file.status === "rejected" || file.status === "needs_manual_match";
+  const showThumb = open && !failed && !imgBroken && (details?.has_preview !== false);
+
+  async function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (!next || details) return;
+    try {
+      setDetails(await photoFetch<SurveyDetails>(`/surveys/${file.survey_id}/details`));
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Не удалось загрузить подробности");
+    }
+  }
+
+  const meta = details?.metadata || {};
+  const corners = details?.object?.plot_corners || [];
+
   return (
     <div className="rounded-xl bg-paper px-3 py-2">
       <div className="flex items-center justify-between gap-3">
@@ -142,18 +198,65 @@ function FileRow({ file }: { file: FileResult }) {
         </div>
         <div className="flex items-center gap-2">
           <Badge className="bg-white text-muted">{file.status}</Badge>
-          <button className="text-xs text-forest" onClick={() => setOpen((v) => !v)}>Подробности</button>
+          <button className="text-xs text-forest" onClick={() => void toggle()}>{open ? "Скрыть" : "Подробнее"}</button>
         </div>
       </div>
       {open ? (
-        <div className="mt-2 text-xs text-muted">
-          <p>survey {file.survey_id} · coverage {file.coverage ?? "—"}</p>
-          {file.status !== "rejected" ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img alt={file.filename} src={`/api/photo/surveys/${file.survey_id}/photo`} className="mt-2 max-h-64 rounded-lg" />
+        <div className={`mt-3 grid gap-4 ${showThumb ? "md:grid-cols-[minmax(0,22rem)_1fr]" : ""}`}>
+          {showThumb ? (
+            <div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                alt={file.filename}
+                src={`/api/photo/surveys/${file.survey_id}/photo`}
+                className="max-h-80 w-full rounded-lg object-contain bg-white"
+                onError={() => setImgBroken(true)}
+              />
+              <p className="mt-2 text-xs text-muted">
+                {corners.length >= 4
+                  ? "На миниатюре красный контур участка и синие углы."
+                  : corners.length === 1
+                    ? "На миниатюре отмечена одна точка участка."
+                    : "Границ нет: у объекта меньше четырёх точек."}
+              </p>
+            </div>
+          ) : failed ? (
+            <p className="text-xs text-muted">Миниатюра скрыта: проверка фото не пройдена.</p>
           ) : null}
+          <div className="space-y-1 text-xs text-muted">
+            {loadError ? <p className="text-clay">{loadError}</p> : null}
+            <p>survey {file.survey_id} · статус {details?.status || file.status}</p>
+            <p>покрытие {details?.coverage ?? file.coverage ?? "—"}</p>
+            {details?.object ? (
+              <p>
+                объект {details.object.object_id} · {details.object.cadastral_number} · {details.object.address}
+              </p>
+            ) : <p>объект не привязан</p>}
+            <MetaLines meta={meta} />
+            {(details?.errors || file.errors || []).length ? (
+              <p className="text-clay">{(details?.errors || file.errors || []).join("; ")}</p>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>
+  );
+}
+
+function MetaLines({ meta }: { meta: Record<string, unknown> }) {
+  const coords = (meta.coordinates || {}) as Record<string, unknown>;
+  const alt = (meta.altitude || {}) as Record<string, unknown>;
+  const cam = (meta.camera || {}) as Record<string, unknown>;
+  const ori = (meta.orientation || {}) as Record<string, unknown>;
+  const image = (meta.image || {}) as Record<string, unknown>;
+  return (
+    <>
+      {meta.datetime_original ? <p>снято {String(meta.datetime_original)}</p> : null}
+      {coords.lat != null ? <p>GPS {String(coords.lat)}, {String(coords.lon)}</p> : <p>GPS нет</p>}
+      {alt.relative != null ? <p>высота {String(alt.relative)} м</p> : null}
+      {cam.model ? <p>камера {String(cam.model)} · фокус {String(cam.focal_length)} мм</p> : null}
+      {ori.yaw != null ? <p>yaw {String(ori.yaw)} · pitch {String(ori.pitch)} · roll {String(ori.roll)}</p> : null}
+      {image.width ? <p>кадр {String(image.width)}×{String(image.height)}</p> : null}
+    </>
   );
 }

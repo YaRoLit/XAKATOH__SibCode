@@ -59,6 +59,9 @@ export type Checkpoint = {
   address?: string;
   cadastral_number?: string;
   plot_corners?: Corner[];
+  overdue_count?: number;
+  open_count?: number;
+  checkpoint_titles?: string[];
 };
 
 export type BuildingObject = {
@@ -73,18 +76,51 @@ export type BuildingObject = {
   planned_completion_at: string | null;
   is_demo: boolean;
   has_problems: boolean;
+  last_photo_at?: string | null;
+  new_photo?: boolean;
   checkpoints: Checkpoint[];
   reports?: Report[];
   created_at?: string | null;
+  recent_surveys?: Array<{
+    survey_id: number;
+    filename: string;
+    status: string;
+    s3_key?: string | null;
+    created_at?: string;
+  }>;
+  analysis_jobs?: Array<{
+    id: number;
+    survey_id: number;
+    status: string;
+    created_at?: string;
+    completed_at?: string | null;
+  }>;
 };
 
 export type Report = {
   id: string;
   object_id: string;
+  source?: string;
   checkpoint_id?: string | null;
   agent_run_id?: string | null;
   raw_json: Record<string, unknown>;
   created_at: string;
+  html_url?: string | null;
+  agent_status?: string | null;
+};
+
+export type ConstructionPlan = {
+  description: string;
+};
+
+export type RegistryImportResult = {
+  created: Array<{ id: string; name: string | null; cadastral_number: string; row: number }>;
+  skipped: Array<{ row: number; cadastral_number: string; reason: string }>;
+  errors: Array<{ row: number; cadastral_number?: string; error: string }>;
+  created_count: number;
+  skipped_count: number;
+  error_count: number;
+  total_rows: number;
 };
 
 export type Alert = {
@@ -113,4 +149,5 @@ export type Dashboard = {
   overdue_checkpoints: number;
   upcoming_checkpoints: Checkpoint[];
   recent_alerts: Alert[];
+  recent_photos?: Alert[];
 };

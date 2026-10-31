@@ -1,22 +1,63 @@
 # СибКонтур — мониторинг строительства
 
-MVP для банка: менеджер ведёт объекты и контрольные точки, оператор БПЛА загружает фото, AI-агент позже сам пишет отчёты в ту же PostgreSQL.
+Стабильная версия 1. Банк ведёт залоговые объекты, оператор БПЛА загружает аэрофото, агент пишет отчёт по снимку.
 
-Сервисы **не вызывают друг друга по HTTP**. Общая точка — база `dronemon` и сеть `dronemon_net`.
-
-Общего корневого `docker-compose.yml` нет: у каждого сервиса свой файл, чтобы поднимать и тестировать их по отдельности. Агента встраиваем, когда он будет готов.
+Сервисы не вызывают друг друга по HTTP. Общая точка — PostgreSQL `dronemon` и сеть `dronemon_net`. У каждого сервиса свой compose, чтобы поднимать их по отдельности.
 
 ## Сервисы
 
-| Каталог | Compose | Контейнер | Назначение |
-|---|---|---|---|
-| `Infra/` | свой | `dronemon-db` | PostgreSQL, создаёт сеть `dronemon_net` |
-| `photo-preprocessing/` | свой | `dronemon-api` | Приём и проверка фото |
-| `db-api/` | свой | `dronemon-db-api` | Объекты, точки, алерты, задачи оператора |
-| `web/` | свой | `dronemon-web` | Кабинеты менеджера и оператора |
-| агент | позже | — | Читает storage, пишет `ai_reports` в ту же БД |
+| Каталог | Контейнер | Назначение |
+|---|---|---|
+| `Infra/` | `dronemon-db` | PostgreSQL, создаёт сеть `dronemon_net` |
+| `photo-preprocessing/` | `dronemon-api` | Приём, проверка и хранение фото |
+| `db-api/` | `dronemon-db-api` | Объекты, точки, алерты, задачи, импорт реестра |
+| `web/` | `dronemon-web` | Кабинеты менеджера и оператора |
+| `analysis-agent/` | `dronemon-analysis-agent` | Очередь → LLM → `analysis_reports` + HTML |
 
-## Запуск по сервисам
+Порты только на `127.0.0.1`. Наружу — через nginx, пример vhost: `Infra/nginx-sibcode.conf`.
+
+- UI: http://127.0.0.1:3000
+- Photo API: http://127.0.0.1:8222
+- db-api: http://127.0.0.1:8001
+
+Демо-вход (регистрации нет):
+
+- менеджер: `manager` / `manager`
+- оператор: `operator` / `operator`
+
+## Что умеет эта версия
+
+Менеджер:
+
+- объекты, контрольные точки, календарь, алерты;
+- границы участка: **1 точка** (центроид) или **4+** (полигон); 2–3 точки нельзя;
+- импорт банковского Excel-реестра (`Территория`, кадастр, плановая дата, залог и т.д.);
+- план строительства свободным текстом для агента;
+- AI-отчёт на карточке объекта: готовность, чек-лист, кропы с разметкой, ссылка на HTML;
+- уведомление о новых фото оператора; объекты с свежими снимками сверху.
+
+Оператор:
+
+- в смену попадают только объекты с координатами;
+- кнопка **Загрузить фото**;
+- после проверки — миниатюра, метаданные, контур участка если точек ≥ 4;
+- неудачная загрузка без битой миниатюры;
+- согласование батча отправляет validated-фото в хранилище и в очередь агента;
+- один warning на объект, если просрочено несколько контрольных точек.
+
+Проверка фото:
+
+- GPS-совпадение ±10 м (и для одной точки, и для полигона);
+- проверка высоты временно отключена;
+- одна GPS-точка объекта = центроид с буфером.
+
+Агент:
+
+- забирает `processing_queue` (`FOR UPDATE SKIP LOCKED`);
+- режимы с планом и без;
+- пишет `analysis_reports` и HTML в storage.
+
+## Запуск
 
 Сначала инфраструктура — она создаёт сеть и БД:
 
@@ -25,17 +66,24 @@ cd Infra
 docker compose up -d
 ```
 
-Дальше любой сервис независимо:
+Дальше сервисы по отдельности:
 
 ```bash
 cd photo-preprocessing
+cp .env.example .env
 docker compose up -d --build
 
 cd ../db-api
+cp .env.example .env
 docker compose up -d --build
 
 cd ../web
-cp .env.example .env          # PHOTO_API_TOKEN = API_TOKEN photo-сервиса
+cp .env.example .env
+# PHOTO_API_TOKEN = API_TOKEN photo-сервиса
+docker compose up -d --build
+
+cd ../analysis-agent
+cp .env.example .env
 docker compose up -d --build
 ```
 
@@ -45,19 +93,20 @@ docker compose up -d --build
 cd db-api && docker compose down
 ```
 
-Интерфейс: http://127.0.0.1:3000  
-Photo API: http://127.0.0.1:8222  
-db-api: http://127.0.0.1:8001  
-Postgres: `127.0.0.1:5432`
+Если alpine-сборка фронта ломается на `npm`, соберите standalone на хосте (Node 20) и поднимите `web/docker-compose.prebuilt.yml`:
 
-Демо-вход (регистрации нет):
-
-- менеджер: `manager` / `manager`
-- оператор: `operator` / `operator`
+```bash
+cd web
+export NEXT_PUBLIC_DB_API_URL=http://127.0.0.1:8001
+npm ci
+npm run build
+mkdir -p .next/standalone/.next/static .next/standalone/public
+cp -a .next/static/. .next/standalone/.next/static/
+cp -a public/. .next/standalone/public/
+docker compose -f docker-compose.prebuilt.yml up -d
+```
 
 ## Фронт без Docker
-
-Удобно, пока крутятся только Infra + photo + db-api:
 
 ```bash
 cd web
@@ -83,24 +132,25 @@ uvicorn app.main:app --reload --port 8001
 
 ## Переменные окружения
 
-Только у каждого сервиса:
+Только у каждого сервиса, секреты в git не кладём:
 
 - `photo-preprocessing/.env.example`
 - `db-api/.env.example`
 - `web/.env.example`
+- `analysis-agent/.env.example`
 
-Секреты не кладём во frontend-бандл. Токен photo API живёт в Next.js BFF.
+Токен photo API живёт в Next.js BFF, не в браузерном бандле.
 
 ## Миграции
 
 Две независимые истории Alembic на одну БД:
 
-- `photo-preprocessing` — таблица `alembic_version`, revision `0001`
-- `db-api` — таблица `alembic_version_db_api`, revision `0001_platform`
+- `photo-preprocessing` — таблица `alembic_version`
+- `db-api` — таблица `alembic_version_db_api`
 
-`0001` photo-сервиса не меняем.
+Ревизии photo-сервиса не переписываем. Таблицы агента (`analysis_reports`, `construction_plans`) создаются через `create_all` без FK на фото.
 
-## Демоданные
+## Демоданные и сброс теста
 
 ```bash
 cd db-api && python scripts/seed_demo.py
@@ -108,61 +158,48 @@ cd db-api && python scripts/seed_demo.py
 
 Идемпотентно: трогает только `is_demo=true`.
 
-## Потоки данных
+Очистить боевые/тестовые данные, не ломая схему и пользователей входа:
 
-1. Менеджер создаёт объект в db-api → PostgreSQL.
-2. Оператор читает задачи из db-api.
-3. Оператор грузит пачку в photo-preprocessing.
-4. Confirm по объекту → storage + `processing_queue`.
-5. Когда агент будет готов: читает storage, пишет `ai_reports` / `problem_alerts`.
-6. Менеджер читает отчёты через db-api.
-
-## Контракт для будущего AI-агента
-
-Агент не вызывается из наших FastAPI. Свой compose добавим отдельно, когда сервис появится. Пишет в ту же PostgreSQL.
-
-Таблица `ai_reports`:
-
-- `id` — строка, например `rep_<hex>`
-- `object_id` — существующий объект
-- `checkpoint_id` — опционально
-- `agent_run_id` — идемпотентность запуска
-- `raw_json` JSONB — исходный ответ, предыдущие запуски не перезаписывать
-- `is_demo` — false для боевых прогонов
-- каждый запуск = новая строка
-
-Ожидаемые, но не обязательные ключи `raw_json`:
-
-```json
-{
-  "overall_readiness_pct": 72,
-  "overall_status": "yellow",
-  "stages": [
-    {"name": "Фундамент", "readiness_pct": 100, "status": "green"}
-  ],
-  "comments": ["текстовые замечания"],
-  "problems": [
-    {
-      "code": "ROOF_GAP",
-      "severity": "yellow",
-      "title": "Пробел покрытия крыши",
-      "description": "..."
-    }
-  ]
-}
+```bash
+./scripts/reset_test_db.sh          # только план
+./scripts/reset_test_db.sh --yes
+./scripts/reset_test_db.sh --yes --seed
+./scripts/reset_test_db.sh --yes --seed --storage
 ```
 
-Иначе фронт покажет сырой JSON. Проблемы можно сразу класть в `problem_alerts`.
+`--storage` ещё чистит raw-снимки и HTML-отчёты в volume `dronemon-api_s3_storage`. На проде без явной просьбы не запускать.
+
+## Потоки данных
+
+1. Менеджер создаёт объект или импортирует реестр → db-api → PostgreSQL.
+2. Координаты участка обязательны, иначе пилот задачу не видит.
+3. Оператор загружает фото в photo-preprocessing.
+4. Согласование батча → storage + `processing_queue` + уведомление менеджеру.
+5. Агент читает очередь и storage, пишет `analysis_reports` и HTML.
+6. Менеджер видит отчёт на карточке объекта.
 
 ## Photo API
 
-Существующие endpoint-ы на месте. Добавлен per-object confirm:
+Существующие endpoint-ы на месте. Для агента нужны:
 
-`POST /v1/batches/{batch_id}/objects/{object_id}/confirm`
+- `POST /v1/batches/{batch_id}/confirm` — согласовать весь батч
+- `POST /v1/batches/{batch_id}/objects/{object_id}/confirm` — согласовать объект
+- `GET /api/v1/storage/{bucket}/{key}` — файлы и HTML-отчёты
 
-## Ограничения MVP
+## Импорт реестра
+
+`POST /api/objects/import` (xlsx). Ожидаемые колонки:
+
+- Территория → адрес
+- Кадастровый номер
+- Плановая дата
+- Дата начала строительства / кредит
+- остальные поля реестра сохраняются по возможности
+
+Координат в банковском файле нет — границы добавляются позже в карточке объекта.
+
+## Ограничения
 
 - Нет карты и парсинга границ из документов
-- Нет импорта Excel/CSV
-- Агент ещё не встроен
-- Нет сложной дисциплины оператора и уведомлений
+- Проверка высоты съёмки временно выключена
+- 2–3 точки участка нельзя: только 1 или 4+

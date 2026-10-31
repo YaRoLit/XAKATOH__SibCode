@@ -7,7 +7,8 @@ class ValidationSettings(BaseSettings):
     altitude_min_m: float = 10.0
     altitude_max_m: float = 120.0
     min_coverage: float = 0.85
-    gps_buffer_m: float = 7.0
+    gps_buffer_m: float = 10.0
+    centroid_buffer_m: float = 10.0
     file_timeout_sec: float = 30.0 
 
 

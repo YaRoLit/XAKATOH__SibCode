@@ -30,42 +30,43 @@ def _geo_to_px(lat: float, lon: float, meta: dict, w: int, h: int) -> tuple[floa
     return (w / 2) + px, (h / 2) + py
 
 
-def render_on_demand(temp_path: str, metadata: dict, plot_corners: list) -> bytes:
-    """
-    Читает оригинал из temp_path, ресайзит до max_side, рисует границы и возвращает bytes.
-    Ничего не сохраняет на диск.
-    """
+def _can_project(metadata: dict | None) -> bool:
+    if not metadata:
+        return False
+    coords = metadata.get("coordinates") or {}
+    alt = metadata.get("altitude") or {}
+    cam = metadata.get("camera") or {}
+    return bool(coords.get("lat") is not None and coords.get("lon") is not None and alt.get("relative") and cam.get("focal_length"))
+
+
+def render_on_demand(temp_path: str, metadata: dict | None, plot_corners: list | None) -> bytes:
+    """Миниатюра из temp. Границы рисуются, если есть GPS-метаданные и 4+ точки."""
     img = cv2.imread(temp_path)
     if img is None:
         raise ValueError(f"Не удалось прочитать изображение: {temp_path}")
-    
+
     h, w = img.shape[:2]
-    
-    # 1. Считаем координаты углов в пикселях оригинала
-    corners_px = [_geo_to_px(p["lat"], p["lon"], metadata, w, h) for p in plot_corners]
-    
-    # 2. Ресайз до max_side (например, 1024)
     max_side = settings.preview.max_side
     scale = max_side / max(w, h)
-    
     if scale < 1.0:
-        new_w, new_h = int(w * scale), int(h * scale)
-        img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        corners_scaled = [(int(x * scale), int(y * scale)) for x, y in corners_px]
+        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
     else:
-        img_resized = img
-        corners_scaled = [(int(x), int(y)) for x, y in corners_px]
-    
-    # 3. Рисуем периметр (красная линия) и углы (синие точки)
-    pts = np.array(corners_scaled, dtype=np.int32)
-    cv2.polylines(img_resized, [pts], isClosed=True, color=(0, 0, 255), thickness=3)
-    for x, y in corners_scaled:
-        cv2.circle(img_resized, (x, y), 6, (255, 0, 0), -1)
-    
-    # 4. Кодируем в JPEG
-    ok, buf = cv2.imencode(".jpg", img_resized, [cv2.IMWRITE_JPEG_QUALITY, settings.preview.jpeg_quality])
+        scale = 1.0
+
+    corners = plot_corners or []
+    if _can_project(metadata) and len(corners) >= 1:
+        try:
+            corners_px = [_geo_to_px(p["lat"], p["lon"], metadata, w, h) for p in corners]
+            corners_scaled = [(int(x * scale), int(y * scale)) for x, y in corners_px]
+            pts = np.array(corners_scaled, dtype=np.int32)
+            if len(corners_scaled) >= 4:
+                cv2.polylines(img, [pts], isClosed=True, color=(0, 0, 255), thickness=3)
+            for x, y in corners_scaled:
+                cv2.circle(img, (x, y), 8 if len(corners_scaled) == 1 else 6, (255, 0, 0), -1)
+        except Exception as exc:
+            log.debug("preview: skip overlay: %s", exc)
+
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, settings.preview.jpeg_quality])
     if not ok:
         raise ValueError("Ошибка кодирования изображения в JPEG")
-    
-    log.debug("preview: rendered on-demand from %s, scale=%.2f, size=%d bytes", temp_path, scale, len(buf))
     return buf.tobytes()

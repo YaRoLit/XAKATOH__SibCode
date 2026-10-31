@@ -14,12 +14,21 @@ def _to_meters(lat: float, lon: float, lat0: float, lon0: float) -> tuple[float,
     return x, y
 
 
-def match(lat: float, lon: float, objects: list[Object], buffer_m: float) -> Object | None:
-    """Point-in-polygon с буфером; при нескольких кандидатах — ближайший центроид."""
+def match(lat: float, lon: float, objects: list[Object], buffer_m: float, centroid_buffer_m: float | None = None) -> Object | None:
+    """4+ точек — полигон с буфером. Одна точка — центроид участка, GPS в радиусе centroid_buffer_m."""
+    centroid_r = centroid_buffer_m if centroid_buffer_m is not None else buffer_m
     candidates = []
     for obj in objects:
-        pts = [_to_meters(p["lat"], p["lon"], lat, lon) for p in obj.plot_corners]
-        poly = Polygon(pts).buffer(buffer_m)
+        corners = obj.plot_corners or []
+        if not corners:
+            continue
+        pts = [_to_meters(p["lat"], p["lon"], lat, lon) for p in corners]
+        if len(pts) == 1:
+            poly = Point(pts[0]).buffer(centroid_r)
+        elif len(pts) >= 4:
+            poly = Polygon(pts).buffer(buffer_m)
+        else:
+            continue
         if poly.contains(Point(0, 0)):
             cx = sum(p[0] for p in pts) / len(pts)
             cy = sum(p[1] for p in pts) / len(pts)

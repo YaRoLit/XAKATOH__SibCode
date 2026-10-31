@@ -4,7 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, require_manager
 from app.db.models import User
 from app.schemas import AlertActionIn
-from app.services.alerts import add_action, get_alert, list_alerts, serialize_alert
+from app.services.alerts import (
+    add_action,
+    get_alert,
+    get_analysis_report,
+    list_alerts,
+    serialize_alert,
+    serialize_analysis_alert,
+)
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -17,7 +24,7 @@ async def alerts(
     _: User = Depends(require_manager),
 ):
     items = await list_alerts(session, status=status, object_id=object_id)
-    return {"items": [await serialize_alert(session, a) for a in items]}
+    return {"items": items}
 
 
 @router.get("/{alert_id}")
@@ -26,6 +33,11 @@ async def alert_detail(
     session: AsyncSession = Depends(get_db),
     _: User = Depends(require_manager),
 ):
+    if alert_id.startswith("ar_"):
+        report = await get_analysis_report(session, int(alert_id[3:]))
+        if report is None:
+            raise HTTPException(status_code=404, detail="Проблема не найдена")
+        return await serialize_analysis_alert(session, report)
     alert = await get_alert(session, alert_id)
     if alert is None:
         raise HTTPException(status_code=404, detail="Проблема не найдена")
@@ -39,6 +51,8 @@ async def alert_action(
     session: AsyncSession = Depends(get_db),
     user: User = Depends(require_manager),
 ):
+    if alert_id.startswith("ar_"):
+        raise HTTPException(status_code=400, detail="Алерт агента только для чтения")
     alert = await get_alert(session, alert_id)
     if alert is None:
         raise HTTPException(status_code=404, detail="Проблема не найдена")

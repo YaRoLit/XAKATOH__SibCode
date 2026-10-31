@@ -28,8 +28,17 @@ def _geo_to_px(lat, lon, meta, w, h):
 def compute(img: np.ndarray, meta: dict, plot_corners: list[dict]) -> tuple[float, np.ndarray, list[tuple[int, int]]]:
     """Возвращает (coverage, нормализованное изображение, углы участка в пикселях нормализованного)."""
     h, w = img.shape[:2]
+    if len(plot_corners) == 1:
+        if not (meta.get("altitude") or {}).get("relative"):
+            return 1.0, img, []
+        px, py = _geo_to_px(plot_corners[0]["lat"], plot_corners[0]["lon"], meta, w, h)
+        coverage = 1.0 if 0 <= px < w and 0 <= py < h else 0.0
+        log.debug("coverage: single-point in_frame=%s", coverage == 1.0)
+        return coverage, img, [(int(px), int(py))]
     corners = [_geo_to_px(p["lat"], p["lon"], meta, w, h) for p in plot_corners]
     poly = Polygon(corners)
+    if poly.area <= 0:
+        return 0.0, img, [(int(x), int(y)) for x, y in corners]
     coverage = poly.intersection(box(0, 0, w, h)).area / poly.area
     log.debug("coverage: raw=%.3f", coverage)
     norm, norm_corners = _normalize(img, corners, meta["orientation"]["yaw"])
@@ -46,8 +55,8 @@ def _normalize(img: np.ndarray, corners, yaw_deg: float):
     x2, y2 = min(w, int(max(xs)) + bx), min(h, int(max(ys)) + by)
     crop = img[y1:y2, x1:x2]
     cc = [(c[0] - x1, c[1] - y1) for c in corners]
-    cx = sum(p[0] for p in cc) / 4
-    cy = sum(p[1] for p in cc) / 4
+    cx = sum(p[0] for p in cc) / len(cc)
+    cy = sum(p[1] for p in cc) / len(cc)
 
     angle = -yaw_deg
     rad = math.radians(angle)

@@ -34,7 +34,9 @@ export default function AlertsPage() {
                   <p className="font-medium">{alert.title}</p>
                   <p className="text-sm text-muted">{alert.object_name} · {formatDateTime(alert.created_at)}</p>
                 </div>
-                <Badge className={alertTone[alert.status]}>{alertLabel[alert.status]}</Badge>
+                <Badge className={alert.severity === "info" ? "bg-forest/10 text-forestDark" : alertTone[alert.status]}>
+                  {alert.severity === "info" ? "Новое фото" : alertLabel[alert.status]}
+                </Badge>
               </div>
             </Card>
           </Link>

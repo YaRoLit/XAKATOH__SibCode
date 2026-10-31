@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-hackathon-secret"
     jwt_expire_hours: int = 12
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    storage_public_base: str = "https://api.yarolit.ru/drones/api/v1/storage/dronemon"
 
 
 settings = Settings()

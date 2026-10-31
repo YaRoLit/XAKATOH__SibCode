@@ -1,0 +1,32 @@
+name: dronemon-agent
+
+# Третий узел. Сеть и Postgres — из Infra, диск — тот же volume, что у photo-preprocessing.
+# docker compose up -d --build
+
+services:
+  analysis-agent:
+    build: .
+    container_name: dronemon-analysis-agent
+    env_file: .env
+    volumes:
+      - s3_storage:/s3-storage
+      - ./config:/app/config:ro
+    networks:
+      dronemon_net:
+        aliases: [analysis-agent]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  s3_storage:
+    name: dronemon-api_s3_storage
+    external: true
+
+networks:
+  dronemon_net:
+    name: dronemon_net
+    external: true

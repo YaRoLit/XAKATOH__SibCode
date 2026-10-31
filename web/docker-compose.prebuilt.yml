@@ -1,0 +1,30 @@
+name: dronemon-web
+
+# Обходит сломанный npm в alpine-сборке: берём уже собранный standalone с хоста.
+# docker compose -f docker-compose.prebuilt.yml up -d
+
+services:
+  web:
+    image: node:20-alpine
+    container_name: dronemon-web
+    working_dir: /app
+    command: ["node", "server.js"]
+    env_file: .env
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      NEXT_PUBLIC_DB_API_URL: ${NEXT_PUBLIC_DB_API_URL:-http://127.0.0.1:8001}
+      PHOTO_API_URL: ${PHOTO_API_URL:-http://dronemon-api:8000}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./.next/standalone:/app:ro
+    networks:
+      dronemon_net:
+        aliases: [web]
+    restart: unless-stopped
+
+networks:
+  dronemon_net:
+    name: dronemon_net
+    external: true
