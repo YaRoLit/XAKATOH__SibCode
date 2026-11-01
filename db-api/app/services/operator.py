@@ -59,12 +59,18 @@ async def rejected_photos(session: AsyncSession) -> list[dict]:
 
 async def recent_surveys(session: AsyncSession) -> list[dict]:
     res = await session.execute(
-        select(Survey)
-        .where(Survey.s3_key.is_not(None))
+        select(Survey, Object.name)
+        .outerjoin(Object, Object.id == Survey.object_id)
+        .where(Survey.status == "validated")
         .order_by(Survey.created_at.desc())
         .limit(30)
     )
-    return [_survey_brief(s) for s in res.scalars()]
+    items = []
+    for survey, object_name in res.all():
+        row = _survey_brief(survey)
+        row["object_name"] = object_name
+        items.append(row)
+    return items
 
 
 async def recent_batches(session: AsyncSession) -> list[dict]:

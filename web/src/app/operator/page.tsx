@@ -11,6 +11,7 @@ type Survey = {
   filename: string;
   status: string;
   object_id?: string | null;
+  object_name?: string | null;
   errors: string[];
   created_at: string;
 };
@@ -73,10 +74,11 @@ export default function OperatorHome() {
       <Card className="mt-4 p-5">
         <h2 className="font-serif text-xl">Последние выполненные съёмки</h2>
         <div className="mt-3 space-y-2">
+          {recent.length === 0 ? <p className="text-sm text-muted">Пока нет принятых съёмок</p> : null}
           {recent.map((s) => (
             <div key={s.survey_id} className="flex justify-between rounded-xl bg-paper px-3 py-2 text-sm">
-              <span>{s.filename} · {s.object_id}</span>
-              <span className="text-muted">{s.status}</span>
+              <span>{s.filename} · {s.object_name || s.object_id || "без объекта"}</span>
+              <span className="text-muted">{formatDate(s.created_at)} · {s.status}</span>
             </div>
           ))}
         </div>

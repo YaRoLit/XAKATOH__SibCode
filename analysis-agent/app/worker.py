@@ -191,6 +191,7 @@ def process_job(job: dict) -> None:
         payload["selected_photo_indices"] = payload.get("selected_photo_indices") or result.get("selected_views") or []
         payload["photo_assessments"] = (payload.get("photo_assessments") or []) + discarded
         _apply_object_match(payload)
+        _normalize_empty_plot(payload)
 
         ids = payload.get("detected_stage_ids") or []
         detected_stage_id = max(ids) if ids else None
@@ -258,6 +259,49 @@ def process_job(job: dict) -> None:
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         session.close()
+
+
+_BUILD_MARKERS = (
+    "фундамент", "стен", "короб", "кровл", "крыш", "котлован", "опалуб",
+    "свая", "сваи", "бетон", "кирпич", "каркас", "перекрыт", "отсыпк",
+)
+
+
+def _checklist_item(item) -> tuple[str, str]:
+    if isinstance(item, dict):
+        return str(item.get("feature") or "").lower(), str(item.get("status") or "")
+    return str(getattr(item, "feature", "") or "").lower(), str(getattr(item, "status", "") or "")
+
+
+def _has_construction_markers(payload: dict) -> bool:
+    for item in payload.get("checklist") or []:
+        feature, status = _checklist_item(item)
+        if status in {"present", "partial"} and any(hint in feature for hint in _BUILD_MARKERS):
+            return True
+    return False
+
+
+def _normalize_empty_plot(payload: dict) -> None:
+    """Пустой участок без следов стройки — 0%, не 3% из низа земляной шкалы."""
+    ids = [int(i) for i in (payload.get("detected_stage_ids") or []) if str(i).lstrip("-").isdigit()]
+    progress = payload.get("progress_percent")
+    if progress is None:
+        return
+    try:
+        progress = int(progress)
+    except (TypeError, ValueError):
+        return
+    earthworks_only = ids and max(ids) <= 0
+    if not earthworks_only or progress <= 0 or progress > 8:
+        return
+    if _has_construction_markers(payload):
+        return
+    payload["progress_percent"] = 0
+    payload["stage_progress_percent"] = 0
+    note = "Пустой участок без видимых строительных работ — готовность 0%."
+    comment = payload.get("progress_comment") or ""
+    if note not in comment:
+        payload["progress_comment"] = f"{comment} {note}".strip()
 
 
 def _apply_object_match(payload: dict) -> None:

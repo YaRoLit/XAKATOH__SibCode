@@ -8,9 +8,9 @@ from sqlalchemy.orm import selectinload
 from app.db.models import Checkpoint, CheckpointDateHistory, Object, Survey
 
 CHECKPOINT_DEFS = (
-    ("Фундамент", 50),
-    ("Стены", 75),
-    ("Крыша", 90),
+    ("Фундамент", 25),
+    ("Стены", 50),
+    ("Крыша", 75),
     ("Полностью построен", 100),
 )
 SHOOT_WINDOW_DAYS = 7
